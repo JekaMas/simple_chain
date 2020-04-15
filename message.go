@@ -14,7 +14,6 @@ type connectedPeer struct {
 
 // Default message struct
 type Message struct {
-	Id   uint64
 	From string
 	Data interface{}
 }

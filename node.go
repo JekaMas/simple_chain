@@ -16,11 +16,10 @@ const (
 )
 
 type Node struct {
-	key           ed25519.PrivateKey
-	address       string
-	genesis       Genesis
-	lastMessageId uint64
-	lastBlockNum  uint64
+	key          ed25519.PrivateKey
+	address      string
+	genesis      Genesis
+	lastBlockNum uint64
 
 	//state
 	blocks []Block
@@ -100,7 +99,7 @@ func (c *Node) AddPeer(peer Blockchain) error {
 
 func (c *Node) Broadcast(ctx context.Context, msg Message) {
 	for _, v := range c.peers {
-		if v.Address != c.address {
+		if msg.From != v.Address && v.Address != c.address {
 			c.SendTo(v, ctx, msg)
 		}
 	}
@@ -163,9 +162,7 @@ func (c *Node) SignTransaction(transaction Transaction) (Transaction, error) {
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	// todo timeout using context + done check
-	c.lastMessageId += 1
 	m := Message{
-		Id:   c.lastMessageId,
 		From: c.address,
 		Data: data,
 	}
@@ -189,10 +186,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 				continue
 			}
 			// broadcast to connected peers
-			if msg.Id > c.lastMessageId {
-				c.Broadcast(ctx, msg)
-				c.lastMessageId = msg.Id
-			}
+			c.Broadcast(ctx, msg)
 		}
 	}
 }
