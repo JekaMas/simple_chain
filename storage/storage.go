@@ -5,6 +5,9 @@ import "errors"
 type Storage interface {
 	Put(key string, data uint64)
 	Get(key string) (uint64, error)
+	// Operations
+	Sub(key string, amount uint64)
+	Add(key string, amount uint64)
 }
 
 /* --- Implementation ----------------------------------------------------------------------------------------------- */
@@ -31,3 +34,14 @@ func (m MapStorage) Get(key string) (uint64, error) {
 	return data, nil
 }
 
+/* --- Operations --------------------------------------------------------------------------------------------------- */
+
+func (m MapStorage) Add(key string, amount uint64) {
+	// todo error
+	m.storage[key] = m.storage[key] + amount
+}
+
+func (m MapStorage) Sub(key string, amount uint64) {
+	// todo error
+	m.storage[key] = m.storage[key] - amount
+}
