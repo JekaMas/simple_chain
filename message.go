@@ -5,17 +5,18 @@ import (
 	"crypto/ed25519"
 )
 
-// Default message struct
-type Message struct {
-	From string
-	Data interface{}
-}
-
 type connectedPeer struct {
 	Address string
 	In      chan Message
 	Out     chan Message
 	cancel  context.CancelFunc
+}
+
+// Default message struct
+type Message struct {
+	Id   uint64
+	From string
+	Data interface{}
 }
 
 // Node representation
@@ -24,6 +25,11 @@ type NodeInfoResp struct {
 	BlockNum        uint64
 	LastBlockHash   string
 	TotalDifficulty uint64
+}
+
+type BlocksRequest struct {
+	BlockNumFrom uint64
+	BlockNumTo   uint64
 }
 
 // Chain block

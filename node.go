@@ -16,10 +16,11 @@ const (
 )
 
 type Node struct {
-	key          ed25519.PrivateKey
-	address      string
-	genesis      Genesis
-	lastBlockNum uint64
+	key           ed25519.PrivateKey
+	address       string
+	genesis       Genesis
+	lastMessageId uint64
+	lastBlockNum  uint64
 
 	//state
 	blocks []Block
@@ -100,7 +101,7 @@ func (c *Node) AddPeer(peer Blockchain) error {
 func (c *Node) Broadcast(ctx context.Context, msg Message) {
 	for _, v := range c.peers {
 		if v.Address != c.address {
-			v.Send(ctx, msg)
+			c.SendTo(v, ctx, msg)
 		}
 	}
 }
@@ -160,60 +161,75 @@ func (c *Node) SignTransaction(transaction Transaction) (Transaction, error) {
 	return transaction, nil
 }
 
-func (cp connectedPeer) Send(ctx context.Context, m Message) {
+func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	// todo timeout using context + done check
+	c.lastMessageId += 1
+	m := Message{
+		Id:   c.lastMessageId,
+		From: c.address,
+		Data: data,
+	}
 	cp.Out <- m
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
 
 func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
-	//todo handshake
-	peer.Send(ctx, Message{
-		From: c.address,
-		Data: c.NodeInfo(),
-	})
+	// handshake
+	c.SendTo(peer, ctx, c.NodeInfo())
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case msg := <-peer.In:
-			err := c.processMessage(peer.Address, msg)
+			err := c.processMessage(ctx, peer, msg)
 			if err != nil {
 				log.Println("Process peer error", err)
 				continue
 			}
-			//broadcast to connected peers
-			//todo stop broadcast
-			c.Broadcast(ctx, msg)
+			// broadcast to connected peers
+			if msg.Id > c.lastMessageId {
+				c.Broadcast(ctx, msg)
+				c.lastMessageId = msg.Id
+			}
 		}
 	}
 }
 
-func (c *Node) processMessage(address string, msg Message) error {
+func (c *Node) processMessage(ctx context.Context, peer connectedPeer, msg Message) error {
 	switch m := msg.Data.(type) {
 	// get transaction from another peer
 	case Transaction:
 		if c.isValidator() {
 			return c.AddTransaction(m)
 		}
+	// received block
+	case Block:
+		fmt.Println(SimplifyAddress(c.address), "receive block from", SimplifyAddress(peer.Address))
+		block := msg.Data.(Block)
+		if c.checkBlock(block) {
+			err := c.insertBlock(block)
+			if err != nil {
+				return err
+			}
+		}
+	// send blocks to peer that requested
+	case BlocksRequest:
+		req := msg.Data.(BlocksRequest)
+		for id := req.BlockNumFrom; id < req.BlockNumTo; id++ {
+			fmt.Println(SimplifyAddress(c.address), "send block [", id, "] to", SimplifyAddress(peer.Address))
+			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
+		}
 	// get info from another peer
 	case NodeInfoResp:
 		needSync := c.lastBlockNum < m.BlockNum
-		fmt.Println(SimplifyAddress(c.address), "connected to ", SimplifyAddress(address), "need sync", needSync)
-
-		if needSync {
-			for id := c.lastBlockNum; id < m.BlockNum; id++ {
-				// todo address?
-				block := c.GetBlockByNumber(id)
-				if c.checkBlock(block) {
-					err := c.insertBlock(block)
-					if err != nil {
-						return err
-					}
-				}
-			}
+		fmt.Println(SimplifyAddress(c.address), "connected to", SimplifyAddress(peer.Address), "need sync", needSync)
+		if needSync { // blocks request
+			c.SendTo(peer, ctx, BlocksRequest{
+				BlockNumFrom: c.lastBlockNum,
+				BlockNumTo:   m.BlockNum,
+			})
 		}
 	}
 	return nil
