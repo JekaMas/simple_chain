@@ -57,10 +57,14 @@ func (c *Node) NodeKey() crypto.PublicKey {
 	return c.key.Public()
 }
 
-func (c *Node) Connection(address string, in chan Message, out chan Message) chan Message {
-	if out == nil {
+func (c *Node) Connection(address string, in chan Message, outs ...chan Message) chan Message {
+	var out chan Message
+	if len(outs) == 0 {
 		out = make(chan Message, MessagesBusLen)
+	} else {
+		out = outs[0]
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	c.peers[address] = connectedPeer{
 		Address: address,
@@ -88,7 +92,7 @@ func (c *Node) AddPeer(peer Blockchain) error {
 	}
 
 	out := make(chan Message, MessagesBusLen)
-	in := peer.Connection(c.address, out, nil)
+	in := peer.Connection(c.address, out)
 	c.Connection(remoteAddress, in, out)
 	return nil
 }

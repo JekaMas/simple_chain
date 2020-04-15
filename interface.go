@@ -7,7 +7,7 @@ import (
 type Blockchain interface {
 	NodeKey() crypto.PublicKey
 	NodeAddress() string
-	Connection(address string, in chan Message, out chan Message) chan Message
+	Connection(address string, in chan Message, out ...chan Message) chan Message
 	PublicAPI
 }
 
