@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"simple_chain"
+	"simple_chain/msg"
 	"simple_chain/storage"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 		}
 	}
 	// initialize test transaction
-	tr := bc.Transaction{
+	tr := msg.Transaction{
 		From:   peers[3].NodeAddress(),
 		To:     peers[4].NodeAddress(),
 		Amount: 100,
@@ -133,9 +134,9 @@ func TestNodeBlockProcessing(t *testing.T) {
 	nd.state.Put(validatorAddr, 50)
 
 	// insert one block with one transaction
-	err = nd.insertBlock(bc.Block{
+	err = nd.insertBlock(msg.Block{
 		BlockNum: 1,
-		Transactions: []bc.Transaction{
+		Transactions: []msg.Transaction{
 			{
 				From:   "one",
 				To:     "two",
@@ -202,9 +203,9 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	nd2 := NewTestNode()
 
 	// add one block
-	err = nd1.insertBlock(bc.Block{
+	err = nd1.insertBlock(msg.Block{
 		BlockNum: 1,
-		Transactions: []bc.Transaction{
+		Transactions: []msg.Transaction{
 			{
 				From:   "one",
 				To:     "two",

@@ -2,6 +2,7 @@ package bc
 
 import (
 	"crypto"
+	"simple_chain/msg"
 	"sort"
 	"time"
 )
@@ -14,7 +15,7 @@ type Genesis struct {
 	Validators []crypto.PublicKey
 }
 
-func (g Genesis) ToBlock() Block {
+func (g Genesis) ToBlock() msg.Block {
 	// sort Alloc keys (lexicographical order)
 	keys := make([]string, 0, len(g.Alloc))
 	for k := range g.Alloc {
@@ -23,9 +24,9 @@ func (g Genesis) ToBlock() Block {
 	sort.Strings(keys)
 
 	// get slice of genesis transactions from initial funds
-	var trs []Transaction
+	var trs []msg.Transaction
 	for account, fund := range g.Alloc {
-		trs = append(trs, Transaction{
+		trs = append(trs, msg.Transaction{
 			From:      "",
 			To:        account,
 			Amount:    fund,
@@ -41,7 +42,7 @@ func (g Genesis) ToBlock() Block {
 		panic("can't convert genesis to block: can't get alloc bytes")
 	}
 
-	block := Block{
+	block := msg.Block{
 		BlockNum:      0,
 		Timestamp:     time.Now().Unix(),
 		Transactions:  trs,

@@ -1,19 +1,21 @@
 package node
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	bc "simple_chain"
+	"simple_chain/msg"
 )
 
 type Validator struct {
 	//embedded node
 	Node
 	//transaction hash - > transaction
-	transactionPool map[string]bc.Transaction
+	transactionPool map[string]msg.Transaction
+	//validator index
+	index uint64
 }
 
-func NewValidator(key ed25519.PrivateKey, genesis bc.Genesis) (*Validator, error) {
+func NewValidator(key ed25519.PrivateKey, genesis bc.Genesis, index uint64) (*Validator, error) {
 	// init node
 	nd, err := NewNode(key, genesis)
 	if err != nil {
@@ -21,11 +23,12 @@ func NewValidator(key ed25519.PrivateKey, genesis bc.Genesis) (*Validator, error
 	}
 	return &Validator{
 		Node:            *nd,
-		transactionPool: make(map[string]bc.Transaction),
+		transactionPool: make(map[string]msg.Transaction),
+		index:           index,
 	}, nil
 }
 
-func (c *Validator) AddTransaction(tr bc.Transaction) error {
+func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	hash, err := tr.Hash()
 	if err != nil {
 		return err
@@ -34,19 +37,24 @@ func (c *Validator) AddTransaction(tr bc.Transaction) error {
 	return nil
 }
 
-func (c *Validator) isValidator() bool {
-	for _, key := range c.genesis.Validators {
-		bts1, _ := bc.Bytes(key)
-		bts2, _ := bc.Bytes(c.key.Public())
-		if bytes.Equal(bts1, bts2) {
-			return true
-		}
-	}
-	return false
-}
-
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
 
 func (c *Validator) startValidating() {
+	for {
+		if c.isMyBlock() {
+			block := c.newBlock()
+		}
+	}
+}
 
+/* --- Common ------------------------------------------------------------------------------------------------------- */
+
+func (c *Validator) newBlock() msg.Block {
+
+}
+
+func (c *Validator) isMyBlock() bool {
+	//blockNum remainder
+	r := (c.lastBlockNum + 1) % c.index
+	return r == 0
 }
