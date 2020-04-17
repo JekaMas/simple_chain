@@ -1,13 +1,14 @@
-package bc
+package node
 
 import (
 	"crypto"
+	"simple_chain"
 )
 
 type Blockchain interface {
 	NodeKey() crypto.PublicKey
 	NodeAddress() string
-	Connection(address string, in chan Message, out ...chan Message) chan Message
+	Connection(address string, in chan bc.Message, out ...chan bc.Message) chan bc.Message
 	PublicAPI
 }
 
@@ -19,10 +20,10 @@ type PublicAPI interface {
 	//for clients
 	GetBalance(account string) (uint64, error)
 	//add to transaction pool
-	AddTransaction(transaction Transaction) error
-	SignTransaction(transaction Transaction) (Transaction, error)
+	AddTransaction(transaction bc.Transaction) error
+	SignTransaction(transaction bc.Transaction) (bc.Transaction, error)
 
 	//sync
-	GetBlockByNumber(ID uint64) Block
-	NodeInfo() NodeInfoResp
+	GetBlockByNumber(ID uint64) bc.Block
+	NodeInfo() bc.NodeInfoResp
 }

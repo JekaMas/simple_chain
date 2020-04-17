@@ -1,16 +1,8 @@
 package bc
 
 import (
-	"context"
 	"crypto/ed25519"
 )
-
-type connectedPeer struct {
-	Address string
-	In      chan Message
-	Out     chan Message
-	cancel  context.CancelFunc
-}
 
 // Default message struct
 type Message struct {
@@ -26,6 +18,7 @@ type NodeInfoResp struct {
 	TotalDifficulty uint64
 }
 
+// Request for needed blocks
 type BlocksRequest struct {
 	BlockNumFrom uint64
 	BlockNumTo   uint64
@@ -44,11 +37,10 @@ type Block struct {
 
 // Send money transaction
 type Transaction struct {
-	From   string
-	To     string
-	Amount uint64
-	Fee    uint64
-	PubKey ed25519.PublicKey
-
+	From      string
+	To        string
+	Amount    uint64
+	Fee       uint64
+	PubKey    ed25519.PublicKey
 	Signature []byte `json:"-"`
 }

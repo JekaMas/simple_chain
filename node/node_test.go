@@ -1,8 +1,9 @@
-package bc
+package node
 
 import (
 	"crypto"
 	"crypto/ed25519"
+	"simple_chain"
 	"simple_chain/storage"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 	initialBalance := uint64(100000)
 	peers := make([]Blockchain, numOfPeers)
 
-	genesis := Genesis{
+	genesis := bc.Genesis{
 		make(map[string]uint64),
 		make([]crypto.PublicKey, 0, numOfValidators),
 	}
@@ -33,7 +34,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 			numOfValidators--
 		}
 		// initialize other nodes
-		address, err := PubKeyToAddress(key.Public())
+		address, err := bc.PubKeyToAddress(key.Public())
 		if err != nil {
 			t.Error(err)
 		}
@@ -57,7 +58,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 		}
 	}
 	// initialize test transaction
-	tr := Transaction{
+	tr := bc.Transaction{
 		From:   peers[3].NodeAddress(),
 		To:     peers[4].NodeAddress(),
 		Amount: 100,
@@ -118,7 +119,7 @@ func TestNodeBlockProcessing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validatorAddr, err := PubKeyToAddress(pubKey)
+	validatorAddr, err := bc.PubKeyToAddress(pubKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,9 +133,9 @@ func TestNodeBlockProcessing(t *testing.T) {
 	nd.state.Put(validatorAddr, 50)
 
 	// insert one block with one transaction
-	err = nd.insertBlock(Block{
+	err = nd.insertBlock(bc.Block{
 		BlockNum: 1,
-		Transactions: []Transaction{
+		Transactions: []bc.Transaction{
 			{
 				From:   "one",
 				To:     "two",
@@ -173,14 +174,14 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validatorAddr, err := PubKeyToAddress(pubKey)
+	validatorAddr, err := bc.PubKeyToAddress(pubKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	genesis := Genesis{
-		make(map[string]uint64),
-		[]crypto.PublicKey{pubKey},
+	genesis := bc.Genesis{
+		Alloc:      make(map[string]uint64),
+		Validators: []crypto.PublicKey{pubKey},
 	}
 
 	NewTestNode := func() Node {
@@ -201,9 +202,9 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	nd2 := NewTestNode()
 
 	// add one block
-	err = nd1.insertBlock(Block{
+	err = nd1.insertBlock(bc.Block{
 		BlockNum: 1,
-		Transactions: []Transaction{
+		Transactions: []bc.Transaction{
 			{
 				From:   "one",
 				To:     "two",
