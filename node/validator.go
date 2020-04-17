@@ -1,9 +1,17 @@
 package node
 
 import (
+	"context"
 	"crypto/ed25519"
-	bc "simple_chain"
+	"fmt"
+	"simple_chain/encode"
+	"simple_chain/genesis"
 	"simple_chain/msg"
+	"time"
+)
+
+const (
+	TransactionsPerBlock = 10
 )
 
 type Validator struct {
@@ -12,19 +20,27 @@ type Validator struct {
 	//transaction hash - > transaction
 	transactionPool map[string]msg.Transaction
 	//validator index
-	index uint64
+	index int
 }
 
-func NewValidator(key ed25519.PrivateKey, genesis bc.Genesis, index uint64) (*Validator, error) {
-	// init node
-	nd, err := NewNode(key, genesis)
+func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
+	// generate validator key
+	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
 	}
+	// append itself to the validators
+	genesis.Validators = append(genesis.Validators, privateKey.Public())
+	// init node
+	nd, err := NewNode(privateKey, genesis)
+	if err != nil {
+		return nil, err
+	}
+	// return new validator
 	return &Validator{
 		Node:            *nd,
 		transactionPool: make(map[string]msg.Transaction),
-		index:           index,
+		index:           len(genesis.Validators),
 	}, nil
 }
 
@@ -37,24 +53,84 @@ func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	return nil
 }
 
-/* --- Processes ---------------------------------------------------------------------------------------------------- */
-
 func (c *Validator) startValidating() {
+	ctx := context.Background()
+	//endless loop
 	for {
-		if c.isMyBlock() {
-			block := c.newBlock()
+		if len(c.validators) != 2 {
+			panic("not two")
+		}
+		if c.isMyTurn() {
+			fmt.Println(simplifyAddress(c.address), "validating block...")
+			//get new block
+			block, err := c.newBlock()
+			if err != nil {
+				// fixme panic
+				panic(err)
+			}
+			err = c.insertBlock(block)
+			if err != nil {
+				// fixme panic
+				panic(err)
+			}
+			//send new block
+			fmt.Println(simplifyAddress(c.address), "generated new block [", simplifyAddress(block.BlockHash), "]")
+			c.Broadcast(ctx, msg.Message{
+				From: c.address,
+				Data: block,
+			})
 		}
 	}
 }
 
-/* --- Common ------------------------------------------------------------------------------------------------------- */
+func (c *Validator) newBlock() (msg.Block, error) {
+	// remove first 0-n transactions from transaction pool
+	var txs = make([]msg.Transaction, 0, TransactionsPerBlock)
+	var i = 0
+	for hash, tr := range c.transactionPool {
+		if i++; i > TransactionsPerBlock {
+			break
+		}
+		// fixme hmm, seems not safe...
+		delete(c.transactionPool, hash)
+		txs = append(txs, tr)
+	}
 
-func (c *Validator) newBlock() msg.Block {
+	prevBlockHash, err := c.GetBlockByNumber(c.lastBlockNum).Hash()
+	if err != nil {
+		return msg.Block{}, err
+	}
 
+	stateHash, err := c.state.Hash()
+	if err != nil {
+		return msg.Block{}, err
+	}
+
+	block := msg.Block{
+		BlockNum:      c.lastBlockNum + 1,
+		Timestamp:     time.Now().Unix(),
+		Transactions:  txs,
+		BlockHash:     "", // fill later
+		PrevBlockHash: prevBlockHash,
+		StateHash:     stateHash,
+		Signature:     nil, // fill later
+	}
+
+	block.BlockHash, err = block.Hash()
+	if err != nil {
+		return msg.Block{}, err
+	}
+
+	block.Signature, err = encode.Bytes(c.key.Public())
+	if err != nil {
+		return msg.Block{}, err
+	}
+
+	return block, nil
 }
 
-func (c *Validator) isMyBlock() bool {
+func (c *Validator) isMyTurn() bool {
 	//blockNum remainder
-	r := (c.lastBlockNum + 1) % c.index
-	return r == 0
+	r := int(c.lastBlockNum+1) % len(c.validators)
+	return r == c.index
 }

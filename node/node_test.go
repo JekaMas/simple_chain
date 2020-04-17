@@ -3,7 +3,7 @@ package node
 import (
 	"crypto"
 	"crypto/ed25519"
-	"simple_chain"
+	"simple_chain/genesis"
 	"simple_chain/msg"
 	"simple_chain/storage"
 	"testing"
@@ -17,9 +17,9 @@ func TestSendTransactionSuccess(t *testing.T) {
 	initialBalance := uint64(100000)
 	peers := make([]Blockchain, numOfPeers)
 
-	genesis := bc.Genesis{
-		make(map[string]uint64),
-		make([]crypto.PublicKey, 0, numOfValidators),
+	genesis := genesis.Genesis{
+		Alloc:      make(map[string]uint64),
+		Validators: make([]crypto.PublicKey, 0, numOfValidators),
 	}
 
 	keys := make([]ed25519.PrivateKey, numOfPeers)
@@ -35,7 +35,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 			numOfValidators--
 		}
 		// initialize other nodes
-		address, err := bc.PubKeyToAddress(key.Public())
+		address, err := PubKeyToAddress(key.Public())
 		if err != nil {
 			t.Error(err)
 		}
@@ -44,7 +44,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 
 	var err error
 	for i := 0; i < numOfPeers; i++ {
-		peers[i], err = NewNode(keys[i], genesis)
+		peers[i], err = NewNode(keys[i], &genesis)
 		if err != nil {
 			t.Error(err)
 		}
@@ -120,7 +120,7 @@ func TestNodeBlockProcessing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validatorAddr, err := bc.PubKeyToAddress(pubKey)
+	validatorAddr, err := PubKeyToAddress(pubKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,12 +175,12 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validatorAddr, err := bc.PubKeyToAddress(pubKey)
+	validatorAddr, err := PubKeyToAddress(pubKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	genesis := bc.Genesis{
+	genesis := genesis.Genesis{
 		Alloc:      make(map[string]uint64),
 		Validators: []crypto.PublicKey{pubKey},
 	}
@@ -188,7 +188,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	NewTestNode := func() Node {
 		// generate one node with one validator
 		_, privateKey, _ := ed25519.GenerateKey(nil)
-		nd, _ := NewNode(privateKey, genesis)
+		nd, _ := NewNode(privateKey, &genesis)
 		// generate node key
 		// initial state
 		nd.state = storage.NewMap()

@@ -1,6 +1,9 @@
 package storage
 
-import "errors"
+import (
+	"errors"
+	"simple_chain/encode"
+)
 
 type Storage interface {
 	Put(key string, data uint64)
@@ -8,6 +11,7 @@ type Storage interface {
 	// Operations
 	Sub(key string, amount uint64)
 	Add(key string, amount uint64)
+	Hash() (string, error)
 }
 
 /* --- Implementation ----------------------------------------------------------------------------------------------- */
@@ -44,4 +48,8 @@ func (m MapStorage) Add(key string, amount uint64) {
 func (m MapStorage) Sub(key string, amount uint64) {
 	// todo error
 	m.storage[key] = m.storage[key] - amount
+}
+
+func (m MapStorage) Hash() (string, error) {
+	return encode.HashAlloc(m.storage)
 }

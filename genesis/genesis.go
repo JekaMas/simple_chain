@@ -1,9 +1,9 @@
-package bc
+package genesis
 
 import (
 	"crypto"
+	"simple_chain/encode"
 	"simple_chain/msg"
-	"sort"
 	"time"
 )
 
@@ -15,14 +15,14 @@ type Genesis struct {
 	Validators []crypto.PublicKey
 }
 
-func (g Genesis) ToBlock() msg.Block {
-	// sort Alloc keys (lexicographical order)
-	keys := make([]string, 0, len(g.Alloc))
-	for k := range g.Alloc {
-		keys = append(keys, k)
+func New() Genesis {
+	return Genesis{
+		Alloc:      make(map[string]uint64),
+		Validators: []crypto.PublicKey{},
 	}
-	sort.Strings(keys)
+}
 
+func (g Genesis) ToBlock() msg.Block {
 	// get slice of genesis transactions from initial funds
 	var trs []msg.Transaction
 	for account, fund := range g.Alloc {
@@ -37,7 +37,7 @@ func (g Genesis) ToBlock() msg.Block {
 	}
 
 	// state hash
-	allocBytes, err := Bytes(g.Alloc)
+	allocHash, err := encode.HashAlloc(g.Alloc)
 	if err != nil {
 		panic("can't convert genesis to block: can't get alloc bytes")
 	}
@@ -48,16 +48,16 @@ func (g Genesis) ToBlock() msg.Block {
 		Transactions:  trs,
 		BlockHash:     "",
 		PrevBlockHash: "",
-		StateHash:     Hash(allocBytes),
+		StateHash:     allocHash,
 		Signature:     nil,
 	}
 
 	// block hash
-	blockBytes, err := Bytes(block)
+	blockBytes, err := encode.Bytes(block)
 	if err != nil {
 		panic("can't convert genesis to block: can't get block bytes")
 	}
-	block.BlockHash = Hash(blockBytes)
+	block.BlockHash = encode.Hash(blockBytes)
 
 	return block
 }

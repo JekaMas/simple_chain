@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
-	"simple_chain"
+	"simple_chain/encode"
+	"simple_chain/genesis"
+	"simple_chain/msg"
 	"simple_chain/storage"
 )
 
@@ -18,20 +22,20 @@ const (
 type Node struct {
 	key          ed25519.PrivateKey
 	address      string
-	genesis      bc.Genesis
+	genesis      *genesis.Genesis
 	lastBlockNum uint64
 
-	//state
-	blocks []bc.Block
-	//peer address - > peer info
+	//chain
+	blocks []msg.Block
+	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
 	state      storage.Storage
 	validators []crypto.PublicKey
 }
 
-func NewNode(key ed25519.PrivateKey, genesis bc.Genesis) (*Node, error) {
-	address, err := bc.PubKeyToAddress(key.Public())
+func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
+	address, err := PubKeyToAddress(key.Public())
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +43,7 @@ func NewNode(key ed25519.PrivateKey, genesis bc.Genesis) (*Node, error) {
 		key:          key,
 		address:      address,
 		genesis:      genesis,
-		blocks:       []bc.Block{genesis.ToBlock()},
+		blocks:       []msg.Block{genesis.ToBlock()},
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
 		state:        storage.NewMap(),
@@ -51,8 +55,8 @@ func NewNode(key ed25519.PrivateKey, genesis bc.Genesis) (*Node, error) {
 
 type connectedPeer struct {
 	Address string
-	In      chan bc.Message
-	Out     chan bc.Message
+	In      chan msg.Message
+	Out     chan msg.Message
 	cancel  context.CancelFunc
 }
 
@@ -60,10 +64,10 @@ func (c *Node) NodeKey() crypto.PublicKey {
 	return c.key.Public()
 }
 
-func (c *Node) Connection(address string, in chan bc.Message, outs ...chan bc.Message) chan bc.Message {
-	var out chan bc.Message
+func (c *Node) Connection(address string, in chan msg.Message, outs ...chan msg.Message) chan msg.Message {
+	var out chan msg.Message
 	if len(outs) == 0 {
-		out = make(chan bc.Message, MessagesBusLen)
+		out = make(chan msg.Message, MessagesBusLen)
 	} else {
 		out = outs[0]
 	}
@@ -81,7 +85,7 @@ func (c *Node) Connection(address string, in chan bc.Message, outs ...chan bc.Me
 }
 
 func (c *Node) AddPeer(peer Blockchain) error {
-	remoteAddress, err := bc.PubKeyToAddress(peer.NodeKey())
+	remoteAddress, err := PubKeyToAddress(peer.NodeKey())
 	if err != nil {
 		return err
 	}
@@ -94,13 +98,17 @@ func (c *Node) AddPeer(peer Blockchain) error {
 		return nil
 	}
 
-	out := make(chan bc.Message, MessagesBusLen)
+	//if v, ok := peer.(Node); ok {
+	//
+	//}
+
+	out := make(chan msg.Message, MessagesBusLen)
 	in := peer.Connection(c.address, out)
 	c.Connection(remoteAddress, in, out)
 	return nil
 }
 
-func (c *Node) Broadcast(ctx context.Context, msg bc.Message) {
+func (c *Node) Broadcast(ctx context.Context, msg msg.Message) {
 	for _, v := range c.peers {
 		if msg.From != v.Address && v.Address != c.address {
 			c.SendTo(v, ctx, msg)
@@ -121,26 +129,26 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 	return fund, nil
 }
 
-func (c *Node) AddTransaction(tr bc.Transaction) error {
+func (c *Node) AddTransaction(tr msg.Transaction) error {
 	/* nothing */
 	return nil
 }
 
-func (c *Node) GetBlockByNumber(ID uint64) bc.Block {
+func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
 	// todo make check and other stuff
 	return c.blocks[ID]
 }
 
-func (c *Node) NodeInfo() bc.NodeInfoResp {
-	lastBlockBytes, err := bc.Bytes(c.blocks[len(c.blocks)-1])
+func (c *Node) NodeInfo() msg.NodeInfoResp {
+	lastBlockBytes, err := encode.Bytes(c.blocks[len(c.blocks)-1])
 	if err != nil {
 		panic("can't convert block to bytes")
 	}
 
-	return bc.NodeInfoResp{
+	return msg.NodeInfoResp{
 		NodeName:        c.address,
 		BlockNum:        c.lastBlockNum,
-		LastBlockHash:   bc.Hash(lastBlockBytes),
+		LastBlockHash:   encode.Hash(lastBlockBytes),
 		TotalDifficulty: 1, // todo totalDifficult
 	}
 }
@@ -149,10 +157,10 @@ func (c *Node) NodeAddress() string {
 	return c.address
 }
 
-func (c *Node) SignTransaction(transaction bc.Transaction) (bc.Transaction, error) {
+func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, error) {
 	b, err := transaction.Bytes()
 	if err != nil {
-		return bc.Transaction{}, err
+		return msg.Transaction{}, err
 	}
 
 	transaction.Signature = ed25519.Sign(c.key, b)
@@ -161,7 +169,7 @@ func (c *Node) SignTransaction(transaction bc.Transaction) (bc.Transaction, erro
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	// todo timeout using context + done check
-	m := bc.Message{
+	m := msg.Message{
 		From: c.address,
 		Data: data,
 	}
@@ -190,16 +198,16 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 	}
 }
 
-func (c *Node) processMessage(ctx context.Context, peer connectedPeer, msg bc.Message) error {
-	switch m := msg.Data.(type) {
+func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message msg.Message) error {
+	switch m := message.Data.(type) {
 	// get transaction from another peer
-	case bc.Transaction:
+	case msg.Transaction:
 		// add all transaction to transaction pool (for validator)
 		return c.AddTransaction(m)
 	// received block
-	case bc.Block:
-		fmt.Println(bc.SimplifyAddress(c.address), "receive block from", bc.SimplifyAddress(peer.Address))
-		block := msg.Data.(bc.Block)
+	case msg.Block:
+		fmt.Println(simplifyAddress(c.address), "receive block from", simplifyAddress(peer.Address))
+		block := message.Data.(msg.Block)
 		if c.checkBlock(block) {
 			err := c.insertBlock(block)
 			if err != nil {
@@ -207,18 +215,18 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, msg bc.Me
 			}
 		}
 	// send blocks to peer that requested
-	case bc.BlocksRequest:
-		req := msg.Data.(bc.BlocksRequest)
+	case msg.BlocksRequest:
+		req := message.Data.(msg.BlocksRequest)
 		for id := req.BlockNumFrom; id < req.BlockNumTo; id++ {
-			fmt.Println(bc.SimplifyAddress(c.address), "send block [", id, "] to", bc.SimplifyAddress(peer.Address))
+			fmt.Println(simplifyAddress(c.address), "send block [", id, "] to", simplifyAddress(peer.Address))
 			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
 		}
 	// get info from another peer
-	case bc.NodeInfoResp:
+	case msg.NodeInfoResp:
 		needSync := c.lastBlockNum < m.BlockNum
-		fmt.Println(bc.SimplifyAddress(c.address), "connected to", bc.SimplifyAddress(peer.Address), "need sync", needSync)
+		fmt.Println(simplifyAddress(c.address), "connected to", simplifyAddress(peer.Address), "need sync", needSync)
 		if needSync { // blocks request
-			c.SendTo(peer, ctx, bc.BlocksRequest{
+			c.SendTo(peer, ctx, msg.BlocksRequest{
 				BlockNumFrom: c.lastBlockNum,
 				BlockNumTo:   m.BlockNum,
 			})
@@ -228,6 +236,18 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, msg bc.Me
 }
 
 /* -- Common -------------------------------------------------------------------------------------------------------- */
+
+func PubKeyToAddress(key crypto.PublicKey) (string, error) {
+	if v, ok := key.(ed25519.PublicKey); ok {
+		b := sha256.Sum256(v)
+		return hex.EncodeToString(b[:]), nil
+	}
+	return "", errors.New("incorrect key")
+}
+
+func simplifyAddress(address string) string {
+	return address[:4]
+}
 
 /*
 type Block struct {
@@ -240,16 +260,16 @@ type Block struct {
 	Signature     []byte `json:"-"`
 }
 */
-func (c *Node) checkBlock(block bc.Block) bool {
+func (c *Node) checkBlock(block msg.Block) bool {
 	return true
 }
 
-func (c *Node) validatorAddr(b bc.Block) (string, error) {
+func (c *Node) validatorAddr(b msg.Block) (string, error) {
 	validatorKey := c.validators[int(b.BlockNum%uint64(len(c.validators)))]
-	return bc.PubKeyToAddress(validatorKey)
+	return PubKeyToAddress(validatorKey)
 }
 
-func (c *Node) insertBlock(b bc.Block) error {
+func (c *Node) insertBlock(b msg.Block) error {
 	for _, v := range b.Transactions {
 		c.state.Sub(v.From, v.Amount+v.Fee)
 		c.state.Add(v.To, v.Amount)
