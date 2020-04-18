@@ -264,8 +264,12 @@ type Block struct {
 }
 */
 func (c *Node) verifyBlock(block msg.Block) error {
-	if block.BlockNum < 0 || block.BlockNum <= c.lastBlockNum {
+	// block num
+	if block.BlockNum < 0 {
 		return errors.New("incorrect block num")
+	}
+	if block.BlockNum <= c.lastBlockNum {
+		return errors.New("already have block")
 	}
 
 	// verify transactions
