@@ -9,9 +9,9 @@ import (
 
 // first block with blockchain settings
 type Genesis struct {
-	//Account -> funds
+	// account -> funds
 	Alloc map[string]uint64
-	//list of validators public keys
+	// list of validators public keys
 	Validators []crypto.PublicKey
 }
 
@@ -35,7 +35,6 @@ func (g Genesis) ToBlock() msg.Block {
 			Signature: nil,
 		})
 	}
-
 	// state hash
 	allocHash, err := encode.HashAlloc(g.Alloc)
 	if err != nil {
@@ -51,7 +50,6 @@ func (g Genesis) ToBlock() msg.Block {
 		StateHash:     allocHash,
 		Signature:     nil,
 	}
-
 	// block hash
 	blockBytes, err := encode.Bytes(block)
 	if err != nil {

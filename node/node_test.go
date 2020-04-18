@@ -16,11 +16,7 @@ func TestSendTransactionSuccess(t *testing.T) {
 
 	initialBalance := uint64(100000)
 	peers := make([]Blockchain, numOfPeers)
-
-	genesis := genesis.Genesis{
-		Alloc:      make(map[string]uint64),
-		Validators: make([]crypto.PublicKey, 0, numOfValidators),
-	}
+	genesis := genesis.New()
 
 	keys := make([]ed25519.PrivateKey, numOfPeers)
 	for i := range keys {

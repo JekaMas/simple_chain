@@ -46,7 +46,7 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		blocks:       []msg.Block{genesis.ToBlock()},
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
-		state:        storage.NewMap(),
+		state:        storage.FromGenesis(genesis),
 		validators:   genesis.Validators,
 	}, nil
 }
@@ -132,13 +132,11 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 }
 
 func (c *Node) AddTransaction(tr msg.Transaction) error {
-	/* nothing */
-	return nil
+	return nil //nothing for node
 }
 
 func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
-	// todo make check and other stuff
-	return c.blocks[ID]
+	return c.blocks[ID] //todo make check and other stuff
 }
 
 func (c *Node) NodeInfo() msg.NodeInfoResp {
@@ -170,7 +168,7 @@ func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, er
 }
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
-	// todo timeout using context + done check
+	//todo timeout using context + done check
 
 	if m, ok := data.(msg.Message); ok {
 		cp.Out <- m
@@ -186,7 +184,7 @@ func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
 
 func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
-	// handshake
+	//handshake
 	c.SendTo(peer, ctx, c.NodeInfo())
 
 	for {
@@ -199,7 +197,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 				log.Println("Process peer error", err)
 				continue
 			}
-			// broadcast to connected peers
+			//broadcast to connected peers
 			c.Broadcast(ctx, message)
 		}
 	}

@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"simple_chain/encode"
+	"simple_chain/genesis"
 )
 
 type Storage interface {
@@ -24,6 +25,17 @@ func NewMap() MapStorage {
 	return MapStorage{
 		make(map[string]uint64),
 	}
+}
+
+func FromGenesis(genesis *genesis.Genesis) MapStorage {
+	storage := NewMap()
+	block := genesis.ToBlock()
+
+	for _, tx := range block.Transactions {
+		storage.Put(tx.To, tx.Amount)
+	}
+
+	return storage
 }
 
 func (m MapStorage) Put(key string, data uint64) {
