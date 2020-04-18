@@ -98,9 +98,11 @@ func (c *Node) AddPeer(peer Blockchain) error {
 		return nil
 	}
 
-	//if v, ok := peer.(Node); ok {
-	//
-	//}
+	if v, ok := peer.(*Validator); ok {
+		if !c.containsValidator(v) {
+			c.validators = append(c.validators, v)
+		}
+	}
 
 	out := make(chan msg.Message, MessagesBusLen)
 	in := peer.Connection(c.address, out)
@@ -169,11 +171,16 @@ func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, er
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	// todo timeout using context + done check
-	m := msg.Message{
-		From: c.address,
-		Data: data,
+
+	if m, ok := data.(msg.Message); ok {
+		cp.Out <- m
+	} else {
+		m := msg.Message{
+			From: c.address,
+			Data: data,
+		}
+		cp.Out <- m
 	}
-	cp.Out <- m
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
@@ -186,14 +193,14 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-peer.In:
-			err := c.processMessage(ctx, peer, msg)
+		case message := <-peer.In:
+			err := c.processMessage(ctx, peer, message)
 			if err != nil {
 				log.Println("Process peer error", err)
 				continue
 			}
 			// broadcast to connected peers
-			c.Broadcast(ctx, msg)
+			c.Broadcast(ctx, message)
 		}
 	}
 }
@@ -206,7 +213,7 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 		return c.AddTransaction(m)
 	// received block
 	case msg.Block:
-		fmt.Println(simplifyAddress(c.address), "receive block from", simplifyAddress(peer.Address))
+		fmt.Println(simplifyAddress(c.address), "receive block [", simplifyAddress(m.BlockHash), "] from", simplifyAddress(peer.Address))
 		block := message.Data.(msg.Block)
 		if c.checkBlock(block) {
 			err := c.insertBlock(block)
@@ -267,6 +274,17 @@ func (c *Node) checkBlock(block msg.Block) bool {
 func (c *Node) validatorAddr(b msg.Block) (string, error) {
 	validatorKey := c.validators[int(b.BlockNum%uint64(len(c.validators)))]
 	return PubKeyToAddress(validatorKey)
+}
+
+func (c *Node) containsValidator(v *Validator) bool {
+	for _, pubKey := range c.validators {
+		addr1, _ := PubKeyToAddress(pubKey)
+		addr2, _ := PubKeyToAddress(v.NodeKey())
+		if addr1 == addr2 {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Node) insertBlock(b msg.Block) error {

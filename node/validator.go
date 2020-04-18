@@ -40,7 +40,7 @@ func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
 	return &Validator{
 		Node:            *nd,
 		transactionPool: make(map[string]msg.Transaction),
-		index:           len(genesis.Validators),
+		index:           len(genesis.Validators) - 1,
 	}, nil
 }
 
@@ -57,9 +57,6 @@ func (c *Validator) startValidating() {
 	ctx := context.Background()
 	//endless loop
 	for {
-		if len(c.validators) != 2 {
-			panic("not two")
-		}
 		if c.isMyTurn() {
 			fmt.Println(simplifyAddress(c.address), "validating block...")
 			//get new block
@@ -131,6 +128,6 @@ func (c *Validator) newBlock() (msg.Block, error) {
 
 func (c *Validator) isMyTurn() bool {
 	//blockNum remainder
-	r := int(c.lastBlockNum+1) % len(c.validators)
+	r := int(c.lastBlockNum) % len(c.validators)
 	return r == c.index
 }
