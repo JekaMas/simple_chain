@@ -19,6 +19,13 @@ const (
 	MessagesBusLen = 100
 )
 
+type connectedPeer struct {
+	Address string
+	In      chan msg.Message
+	Out     chan msg.Message
+	cancel  context.CancelFunc
+}
+
 type Node struct {
 	key          ed25519.PrivateKey
 	address      string
@@ -52,13 +59,6 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 }
 
 /* --- Interface ---------------------------------------------------------------------------------------------------- */
-
-type connectedPeer struct {
-	Address string
-	In      chan msg.Message
-	Out     chan msg.Message
-	cancel  context.CancelFunc
-}
 
 func (c *Node) NodeKey() crypto.PublicKey {
 	return c.key.Public()

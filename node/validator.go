@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"simple_chain/encode"
 	"simple_chain/genesis"
 	"simple_chain/msg"
 	"time"
@@ -118,10 +117,11 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		return msg.Block{}, err
 	}
 
-	block.Signature, err = encode.Bytes(c.key.Public())
+	bts, err := block.Bytes()
 	if err != nil {
 		return msg.Block{}, err
 	}
+	block.Signature = ed25519.Sign(c.key, bts)
 
 	return block, nil
 }
