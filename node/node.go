@@ -46,6 +46,11 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	state := storage.FromGenesis(genesis)
+	// node add itself to the state
+	state.PutOrAdd(address, 0)
+
 	return &Node{
 		key:          key,
 		address:      address,
@@ -53,7 +58,7 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		blocks:       []msg.Block{genesis.ToBlock()},
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
-		state:        storage.FromGenesis(genesis),
+		state:        state,
 		validators:   genesis.Validators,
 	}, nil
 }

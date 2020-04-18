@@ -64,11 +64,8 @@ func (c *Validator) startValidating() {
 				// fixme panic
 				panic(err)
 			}
-			err = c.insertBlock(block)
-			if err != nil {
-				// fixme panic
-				panic(err)
-			}
+			// fixme when get own block in peer loop
+			c.state.Put(c.address, 1000)
 			//send new block
 			fmt.Println(simplifyAddress(c.address), "generated new block [", simplifyAddress(block.BlockHash), "]")
 			c.Broadcast(ctx, msg.Message{
@@ -97,26 +94,31 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		return msg.Block{}, err
 	}
 
-	stateHash, err := c.state.Hash()
-	if err != nil {
-		return msg.Block{}, err
-	}
-
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,
 		Timestamp:     time.Now().Unix(),
 		Transactions:  txs,
 		BlockHash:     "", // fill later
 		PrevBlockHash: prevBlockHash,
-		StateHash:     stateHash,
+		StateHash:     nil, // fill later
 		Signature:     nil, // fill later
 	}
-
+	// apply block
+	err = c.insertBlock(block)
+	if err != nil {
+		return msg.Block{}, err
+	}
+	// state hash
+	block.StateHash, err = c.state.Hash()
+	if err != nil {
+		return msg.Block{}, err
+	}
+	// block hash
 	block.BlockHash, err = block.Hash()
 	if err != nil {
 		return msg.Block{}, err
 	}
-
+	// block signature
 	bts, err := block.Bytes()
 	if err != nil {
 		return msg.Block{}, err

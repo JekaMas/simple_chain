@@ -8,6 +8,7 @@ import (
 
 type Storage interface {
 	Put(key string, data uint64)
+	PutOrAdd(key string, amount uint64)
 	Get(key string) (uint64, error)
 	// Operations
 	Sub(key string, amount uint64)
@@ -51,6 +52,15 @@ func (m MapStorage) Get(key string) (uint64, error) {
 }
 
 /* --- Operations --------------------------------------------------------------------------------------------------- */
+
+func (m MapStorage) PutOrAdd(key string, amount uint64) {
+	_, ok := m.storage[key]
+	if ok {
+		m.Add(key, amount)
+	} else {
+		m.Put(key, amount)
+	}
+}
 
 func (m MapStorage) Add(key string, amount uint64) {
 	// todo error
