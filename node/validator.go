@@ -98,9 +98,9 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		BlockNum:      c.lastBlockNum + 1,
 		Timestamp:     time.Now().Unix(),
 		Transactions:  txs,
-		BlockHash:     "", // fill later
 		PrevBlockHash: prevBlockHash,
-		StateHash:     nil, // fill later
+		StateHash:     "",  // fill later
+		BlockHash:     "",  // fill later
 		Signature:     nil, // fill later
 	}
 	// apply block

@@ -105,7 +105,7 @@ func (c *Node) AddPeer(peer Blockchain) error {
 
 	if v, ok := peer.(*Validator); ok {
 		if !c.containsValidator(v) {
-			c.validators = append(c.validators, v)
+			c.validators = append(c.validators, v.NodeKey())
 		}
 	}
 
@@ -217,11 +217,11 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 	case msg.Block:
 		fmt.Println(simplifyAddress(c.address), "receive block [", simplifyAddress(m.BlockHash), "] from", simplifyAddress(peer.Address))
 		block := message.Data.(msg.Block)
-		if c.checkBlock(block) {
-			err := c.insertBlock(block)
-			if err != nil {
-				return err
-			}
+		if err := c.verifyBlock(block); err != nil {
+			return fmt.Errorf("can't process message: %v", err)
+		}
+		if err := c.insertBlock(block); err != nil {
+			return fmt.Errorf("can't process message: %v", err)
 		}
 	// send blocks to peer that requested
 	case msg.BlocksRequest:
@@ -260,17 +260,86 @@ func simplifyAddress(address string) string {
 
 /*
 type Block struct {
-	BlockNum      uint64
-	Timestamp     int64
-	Transactions  []Transaction
-	BlockHash     string `json:"-"`
-	PrevBlockHash string
-	StateHash     string
-	Signature     []byte `json:"-"`
+	Timestamp     int64 ???
 }
 */
-func (c *Node) checkBlock(block msg.Block) bool {
-	return true
+func (c *Node) verifyBlock(block msg.Block) error {
+	if block.BlockNum < 0 || block.BlockNum <= c.lastBlockNum {
+		return errors.New("incorrect block num")
+	}
+
+	// verify transactions
+	stateCopy := c.state.Copy()
+	for _, tr := range block.Transactions {
+		if err := verifyTransaction(&stateCopy, tr); err != nil {
+			return fmt.Errorf("can't verify block: %v", err)
+		}
+	}
+
+	// verify state hash
+	stateHash, err := stateCopy.Hash()
+	if err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
+	if stateHash != block.StateHash {
+		return errors.New("state hash is incorrect")
+	}
+
+	// get validator public key
+	validatorNum := block.BlockNum % uint64(len(c.validators))
+	validatorKey, ok := c.validators[validatorNum].(ed25519.PublicKey)
+	if !ok {
+		return errors.New("can't convert public key to ed25519")
+	}
+
+	// check signature
+	sig := block.Signature
+	block.Signature = nil
+	bts, err := block.Bytes()
+	if err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
+	if !ed25519.Verify(validatorKey, bts, sig) {
+		return errors.New("block signature is incorrect")
+	}
+
+	// check block hash
+	getBlockHash := block.BlockHash
+	block.BlockHash = ""
+	wantBlockHash, err := block.Hash()
+	if err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
+	if getBlockHash != wantBlockHash {
+		return errors.New("block hash is incorrect")
+	}
+
+	// check parent hash
+	prevBlockHash, err := c.blocks[c.lastBlockNum-1].Hash()
+	if err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
+	if prevBlockHash != block.PrevBlockHash {
+		return errors.New("parent hash is incorrect")
+	}
+	return nil
+}
+
+func verifyTransaction(stateCopy *storage.Storage, tr msg.Transaction) error {
+	// check state funds
+	err := (*stateCopy).Sub(tr.From, tr.Amount+tr.Fee)
+	if err != nil {
+		return fmt.Errorf("can't verify transaction: %v", err)
+	}
+	// check signature
+	bts, err := tr.Bytes()
+	if err != nil {
+		return fmt.Errorf("can't convert transaction to bytes: %v", err)
+	}
+	if !ed25519.Verify(tr.PubKey, bts, tr.Signature) {
+		return errors.New("transaction signature is incorrect")
+	}
+	return nil
 }
 
 func (c *Node) validatorAddr(b msg.Block) (string, error) {
