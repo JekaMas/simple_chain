@@ -78,15 +78,19 @@ func (c *Validator) startValidating() {
 
 func (c *Validator) newBlock() (msg.Block, error) {
 	// remove first 0-n transactions from transaction pool
-	var txs = make([]msg.Transaction, 0, TransactionsPerBlock)
-	var i = 0
+	stateCopy := c.state.Copy()
+	txs := make([]msg.Transaction, 0, TransactionsPerBlock)
+	i := 0
 	for hash, tr := range c.transactionPool {
 		if i++; i > TransactionsPerBlock {
 			break
 		}
 		// fixme hmm, seems not safe...
 		delete(c.transactionPool, hash)
-		txs = append(txs, tr)
+
+		if err := verifyTransaction(&stateCopy, tr); err == nil {
+			txs = append(txs, tr)
+		}
 	}
 
 	prevBlockHash, err := c.GetBlockByNumber(c.lastBlockNum).Hash()
