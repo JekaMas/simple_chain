@@ -113,7 +113,7 @@ func (c *Node) AddPeer(peer Blockchain) error {
 func (c *Node) Broadcast(ctx context.Context, msg msg.Message) {
 	for _, v := range c.peers {
 		if msg.From != v.Address && v.Address != c.address {
-			c.SendTo(v, ctx, msg)
+			c.SendMessageTo(v, ctx, msg)
 		}
 	}
 }
@@ -168,17 +168,16 @@ func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, er
 }
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
-	//todo timeout using context + done check
-
-	if m, ok := data.(msg.Message); ok {
-		cp.Out <- m
-	} else {
-		m := msg.Message{
-			From: c.address,
-			Data: data,
-		}
-		cp.Out <- m
+	m := msg.Message{
+		From: c.address,
+		Data: data,
 	}
+	c.SendMessageTo(cp, ctx, m)
+}
+
+func (c *Node) SendMessageTo(cp connectedPeer, ctx context.Context, msg msg.Message) {
+	//todo timeout using context + done check
+	cp.Out <- msg
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
