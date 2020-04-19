@@ -65,7 +65,11 @@ func (c *Validator) startValidating() {
 				panic(err)
 			}
 			// fixme when get own block in peer loop
-			c.state.Put(c.address, 1000)
+			err = c.state.Put(c.address, 1000)
+			if err != nil {
+				// fixme panic
+				panic(err)
+			}
 			//send new block
 			fmt.Println(simplifyAddress(c.address), "generated new block [", simplifyAddress(block.BlockHash), "]")
 			c.Broadcast(ctx, msg.Message{

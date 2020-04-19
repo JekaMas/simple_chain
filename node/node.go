@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"simple_chain/encode"
 	"simple_chain/genesis"
 	"simple_chain/msg"
@@ -17,6 +16,7 @@ import (
 
 const (
 	MessagesBusLen = 100
+	TransactionFee = 10
 )
 
 type connectedPeer struct {
@@ -48,8 +48,6 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 	}
 
 	state := storage.FromGenesis(genesis)
-	// node add itself to the state
-	state.PutOrAdd(address, 0)
 
 	return &Node{
 		key:          key,
@@ -198,7 +196,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 		case message := <-peer.In:
 			err := c.processMessage(ctx, peer, message)
 			if err != nil {
-				log.Println("Process peer error", err)
+				fmt.Println("Process peer error", err)
 				continue
 			}
 			//broadcast to connected peers
@@ -258,6 +256,17 @@ func simplifyAddress(address string) string {
 	return address[:4]
 }
 
+func (c *Node) newTransaction(toAddress string, amount uint64) (msg.Transaction, error) {
+	tr := msg.Transaction{
+		From:   c.address,
+		To:     toAddress,
+		Amount: amount,
+		Fee:    TransactionFee,
+		PubKey: c.key.Public().(ed25519.PublicKey),
+	}
+	return c.SignTransaction(tr)
+}
+
 /*
 type Block struct {
 	Timestamp     int64 ???
@@ -269,7 +278,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return errors.New("incorrect block num")
 	}
 	if block.BlockNum <= c.lastBlockNum {
-		return errors.New("already have block")
+		return fmt.Errorf("already have block [ %v <= %v ]", block.BlockNum, c.lastBlockNum)
 	}
 
 	// verify transactions
@@ -319,7 +328,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 
 	// check parent hash
-	prevBlockHash, err := c.blocks[c.lastBlockNum-1].Hash()
+	prevBlockHash, err := c.blocks[block.BlockNum-1].Hash()
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
 	}
@@ -336,11 +345,13 @@ func verifyTransaction(stateCopy *storage.Storage, tr msg.Transaction) error {
 		return fmt.Errorf("can't verify transaction: %v", err)
 	}
 	// check signature
+	sig := tr.Signature
+	tr.Signature = nil
 	bts, err := tr.Bytes()
 	if err != nil {
 		return fmt.Errorf("can't convert transaction to bytes: %v", err)
 	}
-	if !ed25519.Verify(tr.PubKey, bts, tr.Signature) {
+	if !ed25519.Verify(tr.PubKey, bts, sig) {
 		return errors.New("transaction signature is incorrect")
 	}
 	return nil

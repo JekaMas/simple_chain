@@ -21,7 +21,7 @@ type Storage interface {
 /* --- Implementation ----------------------------------------------------------------------------------------------- */
 
 type MapStorage struct {
-	storage map[string]uint64
+	alloc map[string]uint64
 }
 
 func NewMap() MapStorage {
@@ -42,17 +42,17 @@ func FromGenesis(genesis *genesis.Genesis) MapStorage {
 }
 
 func (m MapStorage) Put(key string, data uint64) error {
-	_, ok := m.storage[key]
+	_, ok := m.alloc[key]
 	if ok {
 		return errors.New("account already exists")
 	}
 
-	m.storage[key] = data
+	m.alloc[key] = data
 	return nil
 }
 
 func (m MapStorage) Get(key string) (uint64, error) {
-	data, ok := m.storage[key]
+	data, ok := m.alloc[key]
 	if !ok {
 		return 0, errors.New("not found")
 	}
@@ -60,18 +60,17 @@ func (m MapStorage) Get(key string) (uint64, error) {
 }
 
 func (m MapStorage) Copy() Storage {
-	storage := make(map[string]uint64)
-	for key, value := range m.storage {
-		storage[key] = value
+	alloc := make(map[string]uint64)
+	for key, value := range m.alloc {
+		alloc[key] = value
 	}
-
-	return MapStorage{storage: storage}
+	return MapStorage{alloc: alloc}
 }
 
 /* --- Operations --------------------------------------------------------------------------------------------------- */
 
 func (m MapStorage) PutOrAdd(key string, amount uint64) error {
-	_, ok := m.storage[key]
+	_, ok := m.alloc[key]
 	if ok {
 		return m.Add(key, amount)
 	} else {
@@ -80,26 +79,26 @@ func (m MapStorage) PutOrAdd(key string, amount uint64) error {
 }
 
 func (m MapStorage) Add(key string, amount uint64) error {
-	fund, ok := m.storage[key]
+	fund, ok := m.alloc[key]
 	if !ok {
 		return errors.New("no such account")
 	}
-	m.storage[key] = fund + amount
+	m.alloc[key] = fund + amount
 	return nil
 }
 
 func (m MapStorage) Sub(key string, amount uint64) error {
-	fund, ok := m.storage[key]
+	fund, ok := m.alloc[key]
 	if !ok {
 		return errors.New("no such account")
 	}
 	if fund < amount {
 		return errors.New("insufficient funds")
 	}
-	m.storage[key] = fund - amount
+	m.alloc[key] = fund - amount
 	return nil
 }
 
 func (m MapStorage) Hash() (string, error) {
-	return encode.HashAlloc(m.storage)
+	return encode.HashAlloc(m.alloc)
 }

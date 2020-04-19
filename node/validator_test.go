@@ -24,10 +24,10 @@ func TestValidator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Millisecond * 5)
+	time.Sleep(time.Millisecond * 10)
 
 	go v1.startValidating()
 	go v2.startValidating()
 
-	time.Sleep(time.Millisecond * 50)
+	time.Sleep(time.Millisecond * 100)
 }
