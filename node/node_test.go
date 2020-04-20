@@ -226,7 +226,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		return nd
 	}
 	nd1 := NewTestNode()
-	// nd2 := NewTestNode()
+	nd2 := NewTestNode()
 
 	t.Logf("genesis block: [%v]", simplifyAddress(nd1.blocks[0].BlockHash))
 
@@ -270,7 +270,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	peers := []*Node{
 		&validator.Node,
 		nd1,
-		// nd2,
+		nd2,
 	}
 	for i := 0; i < len(peers); i++ {
 		for j := i + 1; j < len(peers); j++ {
@@ -284,7 +284,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 
 	t.Logf("node1 %v state: %v", simplifyAddress(nd1.NodeAddress()), nd1.state.String())
-	// t.Logf("node2 [%v] state: %v", simplifyAddress(nd2.NodeAddress()), nd2.state.String())
+	t.Logf("node2 [%v] state: %v", simplifyAddress(nd2.NodeAddress()), nd2.state.String())
 	t.Logf("valid %v state: %v", simplifyAddress(validator.NodeAddress()), validator.state.String())
 
 	// check states

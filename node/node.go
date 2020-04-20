@@ -41,8 +41,9 @@ type Node struct {
 	state      storage.Storage
 	validators []crypto.PublicKey
 
-	mxPeers *sync.Mutex
-	logger  logger.Logger
+	mxPeers  *sync.Mutex
+	mxBlocks *sync.Mutex
+	logger   logger.Logger
 }
 
 func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
@@ -63,8 +64,9 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		state:        state,
 		validators:   genesis.Validators,
 
-		mxPeers: &(sync.Mutex{}),
-		logger:  logger.New(logger.All),
+		mxBlocks: &(sync.Mutex{}),
+		mxPeers:  &(sync.Mutex{}),
+		logger:   logger.New(logger.None),
 	}, nil
 }
 
@@ -85,13 +87,13 @@ func (c *Node) Connection(address string, in chan msg.Message, outs ...chan msg.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c.mxPeers.Lock()
+	defer c.mxPeers.Unlock()
 	c.peers[address] = connectedPeer{
 		Address: address,
 		Out:     out,
 		In:      in,
 		cancel:  cancel,
 	}
-	c.mxPeers.Unlock()
 
 	go c.peerLoop(ctx, c.peers[address])
 	return c.peers[address].Out
@@ -153,11 +155,16 @@ func (c *Node) AddTransaction(tr msg.Transaction) error {
 }
 
 func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	return c.blocks[ID] // todo make check and other stuff
 }
 
 func (c *Node) NodeInfo() msg.NodeInfoResp {
+	c.mxBlocks.Lock()
 	lastBlock := c.blocks[len(c.blocks)-1]
+	c.mxBlocks.Unlock()
 
 	return msg.NodeInfoResp{
 		NodeName:        c.address,
@@ -245,6 +252,8 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 		}
 	// get info from another peer
 	case msg.NodeInfoResp:
+		c.mxBlocks.Lock()
+		defer c.mxBlocks.Unlock()
 		// blocks request
 		if c.lastBlockNum < m.BlockNum {
 			c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
@@ -405,6 +414,9 @@ func (c *Node) containsValidator(v *Validator) bool {
 }
 
 func (c *Node) insertBlock(b msg.Block) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	for _, tr := range b.Transactions {
 		validatorAddr, err := c.validatorAddr(b)
 		if err != nil {

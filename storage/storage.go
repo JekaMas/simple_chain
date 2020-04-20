@@ -68,6 +68,9 @@ func (m *MapStorage) Get(key string) (uint64, error) {
 }
 
 func (m *MapStorage) Copy() Storage {
+	m.Lock()
+	defer m.Unlock()
+
 	alloc := make(map[string]uint64)
 	for key, value := range m.alloc {
 		alloc[key] = value

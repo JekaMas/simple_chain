@@ -6,7 +6,8 @@ const (
 	Info  = 2
 	Error = 4
 
-	All = Info + Error
+	None = 0
+	All  = Info + Error
 )
 
 type Logger struct {
