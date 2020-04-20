@@ -110,10 +110,8 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		txs = append(txs, tr)
 	}
 
-	prevBlockHash, err := c.GetBlockByNumber(c.lastBlockNum).Hash()
-	if err != nil {
-		return msg.Block{}, err
-	}
+	prevBlockHash := c.GetBlockByNumber(c.lastBlockNum).BlockHash
+	c.logger.Infof("validator parent block: %v", c.GetBlockByNumber(c.lastBlockNum))
 
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,
@@ -125,7 +123,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		Signature:     nil, // fill later
 	}
 	// apply block
-	err = c.insertBlock(block)
+	err := c.insertBlock(block)
 	if err != nil {
 		return msg.Block{}, err
 	}

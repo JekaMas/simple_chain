@@ -64,7 +64,7 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		validators:   genesis.Validators,
 
 		mxPeers: &(sync.Mutex{}),
-		logger:  logger.New(logger.Error),
+		logger:  logger.New(logger.All),
 	}, nil
 }
 
@@ -224,16 +224,15 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 		return c.AddTransaction(m)
 	// received block
 	case msg.Block:
-		block := message.Data.(msg.Block)
 		c.logger.Infof("%v receive block [%v] from %v",
 			simplifyAddress(c.address), simplifyAddress(m.BlockHash), simplifyAddress(peer.Address))
-		if err := c.verifyBlock(block); err != nil {
+		if err := c.verifyBlock(m); err != nil {
 			return fmt.Errorf("can't process message: %v", err)
 		}
-		if err := c.insertBlock(block); err != nil {
+		if err := c.insertBlock(m); err != nil {
 			return fmt.Errorf("can't process message: %v", err)
 		}
-		c.logger.Infof("%v inserted new block len=%v", simplifyAddress(c.address), len(c.blocks))
+		c.logger.Infof("%v insert new block [%v]", simplifyAddress(c.address), simplifyAddress(m.BlockHash))
 	// send blocks to peer that requested
 	case msg.BlocksRequest:
 		// if my request
@@ -357,10 +356,9 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 
 	// check parent hash
-	prevBlockHash, err := c.blocks[block.BlockNum-1].Hash()
-	if err != nil {
-		return fmt.Errorf("can't verify block: %v", err)
-	}
+	c.logger.Infof("node parent block: %v", c.GetBlockByNumber(block.BlockNum-1))
+
+	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
 	}

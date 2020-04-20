@@ -4,7 +4,13 @@ import (
 	"crypto"
 	"simple_chain/encode"
 	"simple_chain/msg"
+	"sort"
+	"strings"
 	"time"
+)
+
+var (
+	genesisTime = time.Now().Unix()
 )
 
 // first block with blockchain settings
@@ -35,6 +41,10 @@ func (g Genesis) ToBlock() msg.Block {
 			Signature: nil,
 		})
 	}
+	// sort genesis transactions
+	sort.Slice(trs, func(i, j int) bool {
+		return strings.Compare(trs[i].To, trs[j].To) > 0
+	})
 	// state hash
 	allocHash, err := encode.HashAlloc(g.Alloc)
 	if err != nil {
@@ -43,7 +53,7 @@ func (g Genesis) ToBlock() msg.Block {
 
 	block := msg.Block{
 		BlockNum:      0,
-		Timestamp:     time.Now().Unix(),
+		Timestamp:     genesisTime,
 		Transactions:  trs,
 		BlockHash:     "",
 		PrevBlockHash: "",
