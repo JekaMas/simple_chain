@@ -22,16 +22,11 @@ type Validator struct {
 	index int
 }
 
-func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
-	// generate validator key
-	_, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		return nil, err
-	}
+func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator, error) {
 	// append itself to the validators
-	genesis.Validators = append(genesis.Validators, privateKey.Public())
+	genesis.Validators = append(genesis.Validators, key.Public())
 	// init node
-	nd, err := NewNode(privateKey, genesis)
+	nd, err := NewNode(key, genesis)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +36,16 @@ func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
 		transactionPool: make(map[string]msg.Transaction),
 		index:           len(genesis.Validators) - 1,
 	}, nil
+}
+
+// NewValidatorFromGenesis - additional constructor
+func NewValidatorFromGenesis(genesis *genesis.Genesis) (*Validator, error) {
+	// generate validator key
+	_, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return nil, err
+	}
+	return NewValidator(privateKey, genesis)
 }
 
 func (c *Validator) AddTransaction(tr msg.Transaction) error {
@@ -132,12 +137,16 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		return msg.Block{}, err
 	}
 	block.Signature = ed25519.Sign(c.key, bts)
-
+	// apply additional fields
+	c.blocks[c.lastBlockNum].StateHash = block.StateHash
+	c.blocks[c.lastBlockNum].BlockHash = block.BlockHash
+	c.blocks[c.lastBlockNum].Signature = block.Signature
+	// return new block
 	return block, nil
 }
 
 func (c *Validator) isMyTurn() bool {
 	//blockNum remainder
-	r := int(c.lastBlockNum) % len(c.validators)
-	return r == c.index
+	r := c.lastBlockNum % uint64(len(c.validators))
+	return r == uint64(c.index)
 }

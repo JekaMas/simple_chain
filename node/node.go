@@ -8,10 +8,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"simple_chain/encode"
 	"simple_chain/genesis"
+	"simple_chain/logger"
 	"simple_chain/msg"
 	"simple_chain/storage"
+	"sync"
 )
 
 const (
@@ -39,6 +40,9 @@ type Node struct {
 	//peer address -> fund
 	state      storage.Storage
 	validators []crypto.PublicKey
+
+	mxPeers sync.Mutex
+	logger  logger.Logger
 }
 
 func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
@@ -58,6 +62,7 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
 		validators:   genesis.Validators,
+		logger:       logger.New(logger.Error),
 	}, nil
 }
 
@@ -76,12 +81,15 @@ func (c *Node) Connection(address string, in chan msg.Message, outs ...chan msg.
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	c.mxPeers.Lock()
 	c.peers[address] = connectedPeer{
 		Address: address,
 		Out:     out,
 		In:      in,
 		cancel:  cancel,
 	}
+	c.mxPeers.Unlock()
 
 	go c.peerLoop(ctx, c.peers[address])
 	return c.peers[address].Out
@@ -114,6 +122,9 @@ func (c *Node) AddPeer(peer Blockchain) error {
 }
 
 func (c *Node) Broadcast(ctx context.Context, msg msg.Message) {
+	c.mxPeers.Lock()
+	defer c.mxPeers.Unlock()
+
 	for _, v := range c.peers {
 		if msg.From != v.Address && v.Address != c.address {
 			c.SendMessageTo(v, ctx, msg)
@@ -139,19 +150,16 @@ func (c *Node) AddTransaction(tr msg.Transaction) error {
 }
 
 func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
-	return c.blocks[ID] //todo make check and other stuff
+	return c.blocks[ID] // todo make check and other stuff
 }
 
 func (c *Node) NodeInfo() msg.NodeInfoResp {
-	lastBlockBytes, err := encode.Bytes(c.blocks[len(c.blocks)-1])
-	if err != nil {
-		panic("can't convert block to bytes")
-	}
+	lastBlock := c.blocks[len(c.blocks)-1]
 
 	return msg.NodeInfoResp{
 		NodeName:        c.address,
 		BlockNum:        c.lastBlockNum,
-		LastBlockHash:   encode.Hash(lastBlockBytes),
+		LastBlockHash:   lastBlock.BlockHash,
 		TotalDifficulty: 1, // todo totalDifficult
 	}
 }
@@ -196,7 +204,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 		case message := <-peer.In:
 			err := c.processMessage(ctx, peer, message)
 			if err != nil {
-				fmt.Println("Process peer error", err)
+				c.logger.Errorf("%v process peer error: %v", simplifyAddress(c.address), err)
 				continue
 			}
 			//broadcast to connected peers
@@ -213,28 +221,35 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 		return c.AddTransaction(m)
 	// received block
 	case msg.Block:
-		fmt.Println(simplifyAddress(c.address), "receive block [", simplifyAddress(m.BlockHash), "] from", simplifyAddress(peer.Address))
 		block := message.Data.(msg.Block)
+		c.logger.Infof("%v receive block [%v] from %v",
+			simplifyAddress(c.address), simplifyAddress(m.BlockHash), simplifyAddress(peer.Address))
 		if err := c.verifyBlock(block); err != nil {
 			return fmt.Errorf("can't process message: %v", err)
 		}
 		if err := c.insertBlock(block); err != nil {
 			return fmt.Errorf("can't process message: %v", err)
 		}
+		c.logger.Infof("%v inserted new block len=%v", simplifyAddress(c.address), len(c.blocks))
 	// send blocks to peer that requested
 	case msg.BlocksRequest:
-		req := message.Data.(msg.BlocksRequest)
-		for id := req.BlockNumFrom; id < req.BlockNumTo; id++ {
-			fmt.Println(simplifyAddress(c.address), "send block [", id, "] to", simplifyAddress(peer.Address))
-			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
+		// if my request
+		if m.From == c.NodeAddress() {
+			for id := m.BlockNumFrom; id <= m.BlockNumTo; id++ {
+				c.logger.Infof("%v send block [%v] to %v",
+					simplifyAddress(c.address), simplifyAddress(c.blocks[id].BlockHash), simplifyAddress(peer.Address))
+				c.SendTo(peer, ctx, c.GetBlockByNumber(id))
+			}
 		}
 	// get info from another peer
 	case msg.NodeInfoResp:
-		needSync := c.lastBlockNum < m.BlockNum
-		fmt.Println(simplifyAddress(c.address), "connected to", simplifyAddress(peer.Address), "need sync", needSync)
-		if needSync { // blocks request
+		// blocks request
+		if c.lastBlockNum < m.BlockNum {
+			c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
 			c.SendTo(peer, ctx, msg.BlocksRequest{
-				BlockNumFrom: c.lastBlockNum,
+				From:         m.NodeName,
+				To:           c.NodeAddress(),
+				BlockNumFrom: c.lastBlockNum + 1,
 				BlockNumTo:   m.BlockNum,
 			})
 		}
@@ -253,6 +268,9 @@ func PubKeyToAddress(key crypto.PublicKey) (string, error) {
 }
 
 func simplifyAddress(address string) string {
+	if len(address) < 4 {
+		return address
+	}
 	return address[:4]
 }
 
@@ -278,7 +296,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return errors.New("incorrect block num")
 	}
 	if block.BlockNum <= c.lastBlockNum {
-		return fmt.Errorf("already have block [ %v <= %v ]", block.BlockNum, c.lastBlockNum)
+		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
 
 	// verify transactions
@@ -351,6 +369,9 @@ func verifyTransaction(stateCopy *storage.Storage, tr msg.Transaction) error {
 	if err != nil {
 		return fmt.Errorf("can't convert transaction to bytes: %v", err)
 	}
+	if len(tr.PubKey) == 0 {
+		return errors.New("transaction key is empty")
+	}
 	if !ed25519.Verify(tr.PubKey, bts, sig) {
 		return errors.New("transaction signature is incorrect")
 	}
@@ -374,18 +395,35 @@ func (c *Node) containsValidator(v *Validator) bool {
 }
 
 func (c *Node) insertBlock(b msg.Block) error {
-	for _, v := range b.Transactions {
-		c.state.Sub(v.From, v.Amount+v.Fee)
-		c.state.Add(v.To, v.Amount)
-
+	for _, tr := range b.Transactions {
 		validatorAddr, err := c.validatorAddr(b)
 		if err != nil {
 			return err
 		}
-		c.state.Add(validatorAddr, v.Fee)
+
+		err = c.applyTransaction(validatorAddr, tr)
+		if err != nil {
+			return err
+		}
 	}
 
 	c.blocks = append(c.blocks, b)
 	c.lastBlockNum += 1
+	return nil
+}
+
+func (c *Node) applyTransaction(validatorAddress string, tr msg.Transaction) error {
+	err := c.state.Sub(tr.From, tr.Amount+tr.Fee)
+	if err != nil {
+		return err
+	}
+	err = c.state.Add(tr.To, tr.Amount)
+	if err != nil {
+		return err
+	}
+	err = c.state.Add(validatorAddress, tr.Fee)
+	if err != nil {
+		return err
+	}
 	return nil
 }

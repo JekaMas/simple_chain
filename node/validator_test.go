@@ -9,12 +9,12 @@ import (
 func TestValidator(t *testing.T) {
 	gen := genesis.New()
 	// validator 1
-	v1, err := NewValidator(&gen)
+	v1, err := NewValidatorFromGenesis(&gen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// validator 2
-	v2, err := NewValidator(&gen)
+	v2, err := NewValidatorFromGenesis(&gen)
 	if err != nil {
 		t.Fatal(err)
 	}

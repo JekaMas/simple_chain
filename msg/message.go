@@ -16,6 +16,8 @@ type NodeInfoResp struct {
 
 // Request for needed blocks
 type BlocksRequest struct {
+	From         string
+	To           string
 	BlockNumFrom uint64
 	BlockNumTo   uint64
 }

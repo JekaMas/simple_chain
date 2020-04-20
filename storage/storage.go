@@ -8,6 +8,7 @@ import (
 
 type Storage interface {
 	Put(key string, data uint64) error
+	PutMap(map[string]uint64) error
 	PutOrAdd(key string, amount uint64) error
 	Get(key string) (uint64, error)
 	// Operations
@@ -76,6 +77,15 @@ func (m MapStorage) PutOrAdd(key string, amount uint64) error {
 	} else {
 		return m.Put(key, amount)
 	}
+}
+
+func (m MapStorage) PutMap(alloc map[string]uint64) error {
+	for addr, fund := range alloc {
+		if err := m.Put(addr, fund); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m MapStorage) Add(key string, amount uint64) error {
