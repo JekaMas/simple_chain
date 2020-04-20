@@ -111,7 +111,6 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	}
 
 	prevBlockHash := c.GetBlockByNumber(c.lastBlockNum).BlockHash
-	c.logger.Infof("validator parent block: %v", c.GetBlockByNumber(c.lastBlockNum))
 
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,

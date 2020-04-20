@@ -356,8 +356,6 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 
 	// check parent hash
-	c.logger.Infof("node parent block: %v", c.GetBlockByNumber(block.BlockNum-1))
-
 	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
