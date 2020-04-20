@@ -69,7 +69,7 @@ func TestSyncBlockSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = peers[0].applyTransaction(peers[0].NodeAddress(), tr)
+	err = applyTransaction(peers[0].state, peers[0].NodeAddress(), tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		return nd
 	}
 	nd1 := NewTestNode()
-	nd2 := NewTestNode()
+	// nd2 := NewTestNode()
 
 	t.Logf("genesis block: [%v]", simplifyAddress(nd1.blocks[0].BlockHash))
 
@@ -263,11 +263,15 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		simplifyAddress(validator.blocks[1].BlockHash), simplifyAddress(nd1.NodeAddress()))
 
 	t.Logf("node1 %v", simplifyAddress(nd1.NodeAddress()))
-	t.Logf("node2 %v", simplifyAddress(nd2.NodeAddress()))
+	// t.Logf("node2 %v", simplifyAddress(nd2.NodeAddress()))
 	t.Logf("valid %v", simplifyAddress(validator.NodeAddress()))
 
 	// connect peers
-	peers := []*Node{&validator.Node, nd1, nd2}
+	peers := []*Node{
+		&validator.Node,
+		nd1,
+		// nd2,
+	}
 	for i := 0; i < len(peers); i++ {
 		for j := i + 1; j < len(peers); j++ {
 			if err := peers[i].AddPeer(peers[j]); err != nil {
@@ -277,14 +281,14 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	}
 
 	// wait processing
-	time.Sleep(3 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 
-	t.Logf("node1 [%v] state: %v", simplifyAddress(nd1.NodeAddress()), nd1.state)
-	t.Logf("node2 [%v] state: %v", simplifyAddress(nd2.NodeAddress()), nd2.state)
-	t.Logf("valid [%v] state: %v", simplifyAddress(validator.NodeAddress()), validator.state)
+	t.Logf("node1 %v state: %v", simplifyAddress(nd1.NodeAddress()), nd1.state.String())
+	// t.Logf("node2 [%v] state: %v", simplifyAddress(nd2.NodeAddress()), nd2.state.String())
+	t.Logf("valid %v state: %v", simplifyAddress(validator.NodeAddress()), validator.state.String())
 
 	// check states
-	for i := 0; i < 3; i++ {
+	for i := 0; i < len(peers); i++ {
 		// get balances
 		one, err := peers[i].GetBalance("one")
 		if err != nil {
@@ -300,6 +304,10 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		}
 
 		// check balances
+		if valBalance != 70+10 {
+			t.Fatalf("wrong second validator's state: get=%v, want=%v ",
+				valBalance, 70+10)
+		}
 		if one != 200-(100+10) {
 			t.Fatalf("wrong first node's state: get=%v, want=%v ",
 				one, 200-(100+10))
@@ -307,10 +315,6 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		if two != 50+100 {
 			t.Fatalf("wrong second node's state: get=%v, want=%v ",
 				two, 50+100)
-		}
-		if valBalance != 70+10 {
-			t.Fatalf("wrong second validator's state: get=%v, want=%v ",
-				valBalance, 70+10)
 		}
 	}
 }
@@ -386,13 +390,13 @@ func TestVerifyTransactionSuccess(t *testing.T) {
 	}
 
 	state1 := nd1.state.Copy()
-	err = verifyTransaction(&state1, tr)
+	err = verifyTransaction(state1, tr)
 	if err != nil {
 		t.Errorf("verify transaction: %v", err)
 	}
 
 	state2 := nd2.state.Copy()
-	err = verifyTransaction(&state2, tr)
+	err = verifyTransaction(state2, tr)
 	if err != nil {
 		t.Errorf("verify transaction: %v", err)
 	}

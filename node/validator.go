@@ -97,9 +97,17 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		// fixme hmm, seems not safe...
 		delete(c.transactionPool, hash)
 
-		if err := verifyTransaction(&stateCopy, tr); err == nil {
-			txs = append(txs, tr)
+		if err := verifyTransaction(stateCopy, tr); err != nil {
+			c.logger.Errorf("transaction %v verify failure: %v",
+				simplifyAddress(hash), err)
+			continue
 		}
+		if err := applyTransaction(stateCopy, c.NodeAddress(), tr); err != nil {
+			c.logger.Errorf("transaction %v apply failure: %v",
+				simplifyAddress(hash), err)
+			continue
+		}
+		txs = append(txs, tr)
 	}
 
 	prevBlockHash, err := c.GetBlockByNumber(c.lastBlockNum).Hash()

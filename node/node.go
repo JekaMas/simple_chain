@@ -41,7 +41,7 @@ type Node struct {
 	state      storage.Storage
 	validators []crypto.PublicKey
 
-	mxPeers sync.Mutex
+	mxPeers *sync.Mutex
 	logger  logger.Logger
 }
 
@@ -62,7 +62,9 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
 		validators:   genesis.Validators,
-		logger:       logger.New(logger.Error),
+
+		mxPeers: &(sync.Mutex{}),
+		logger:  logger.New(logger.Error),
 	}, nil
 }
 
@@ -146,7 +148,8 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 }
 
 func (c *Node) AddTransaction(tr msg.Transaction) error {
-	return nil //nothing for node
+	//nothing for node
+	return nil
 }
 
 func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
@@ -299,10 +302,18 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
 
+	validatorAddr, err := c.validatorAddr(block)
+	if err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
+
 	// verify transactions
 	stateCopy := c.state.Copy()
 	for _, tr := range block.Transactions {
-		if err := verifyTransaction(&stateCopy, tr); err != nil {
+		if err := verifyTransaction(stateCopy, tr); err != nil {
+			return fmt.Errorf("can't verify block: %v", err)
+		}
+		if err := applyTransaction(stateCopy, validatorAddr, tr); err != nil {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
 	}
@@ -356,11 +367,14 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	return nil
 }
 
-func verifyTransaction(stateCopy *storage.Storage, tr msg.Transaction) error {
+func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 	// check state funds
-	err := (*stateCopy).Sub(tr.From, tr.Amount+tr.Fee)
+	fund, err := state.Get(tr.From)
 	if err != nil {
 		return fmt.Errorf("can't verify transaction: %v", err)
+	}
+	if fund < tr.Amount+tr.Fee {
+		return fmt.Errorf("insufficient funds: %v < %v", fund, tr.Amount+tr.Fee)
 	}
 	// check signature
 	sig := tr.Signature
@@ -401,7 +415,7 @@ func (c *Node) insertBlock(b msg.Block) error {
 			return err
 		}
 
-		err = c.applyTransaction(validatorAddr, tr)
+		err = applyTransaction(c.state, validatorAddr, tr)
 		if err != nil {
 			return err
 		}
@@ -412,16 +426,19 @@ func (c *Node) insertBlock(b msg.Block) error {
 	return nil
 }
 
-func (c *Node) applyTransaction(validatorAddress string, tr msg.Transaction) error {
-	err := c.state.Sub(tr.From, tr.Amount+tr.Fee)
+func applyTransaction(state storage.Storage, validatorAddress string, tr msg.Transaction) error {
+	state.Lock()
+	defer state.Unlock()
+
+	err := state.Sub(tr.From, tr.Amount+tr.Fee)
 	if err != nil {
 		return err
 	}
-	err = c.state.Add(tr.To, tr.Amount)
+	err = state.Add(tr.To, tr.Amount)
 	if err != nil {
 		return err
 	}
-	err = c.state.Add(validatorAddress, tr.Fee)
+	err = state.Add(validatorAddress, tr.Fee)
 	if err != nil {
 		return err
 	}
