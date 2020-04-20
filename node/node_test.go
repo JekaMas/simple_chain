@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+/* --- BAD ---------------------------------------------------------------------------------------------------------- */
+
 // !!!
 func TestSyncBlockSuccess(t *testing.T) {
 	numOfValidators := 3
@@ -205,6 +207,89 @@ func TestNodeBlockProcessing(t *testing.T) {
 }
 
 // !!!
+func TestVerifyBlockSuccess(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
+
+	v, err := NewValidatorFromGenesis(&gen)
+	if err != nil {
+		t.Errorf("new validator: %v", err)
+	}
+
+	err = v.AddTransaction(msg.Transaction{
+		From:      "two",
+		To:        "one",
+		Amount:    10,
+		Fee:       20,
+		PubKey:    nil,
+		Signature: nil,
+	})
+	if err != nil {
+		t.Errorf("new validator: %v", err)
+	}
+
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Errorf("generate key: %v", err)
+	}
+
+	n, err := NewNode(key, &gen)
+	if err != nil {
+		t.Errorf("new node: %v", err)
+	}
+
+	// t.Log("validator state: ", v.state)
+	// t.Log("node state:      ", n.state)
+
+	block, err := v.newBlock()
+	if err != nil {
+		t.Errorf("new block error: %v", err)
+	}
+
+	// t.Log("new block: ", block)
+	time.Sleep(1 * time.Millisecond)
+
+	if err := n.verifyBlock(block); err != nil {
+		t.Fatalf("verify block: %v", err)
+	}
+}
+
+// !!!
+func TestVerifyTransactionSuccess(t *testing.T) {
+
+	gen := genesis.New()
+	pubKey, privKey, _ := ed25519.GenerateKey(nil)
+	addr, _ := PubKeyToAddress(pubKey)
+	gen.Alloc[addr] = 100
+
+	nd1, _ := NewNode(privKey, &gen)
+	_, privKey, _ = ed25519.GenerateKey(nil)
+	nd2, _ := NewNode(privKey, &gen)
+
+	tr, err := nd1.newTransaction(nd2.NodeAddress(), 10)
+	if err != nil {
+		t.Errorf("new transaction error: %v", err)
+	}
+
+	state1 := nd1.state.Copy()
+	err = verifyTransaction(state1, tr)
+	if err != nil {
+		t.Errorf("verify transaction: %v", err)
+	}
+
+	state2 := nd2.state.Copy()
+	err = verifyTransaction(state2, tr)
+	if err != nil {
+		t.Errorf("verify transaction: %v", err)
+	}
+}
+
+/* --- GOOD --------------------------------------------------------------------------------------------------------- */
+
 func TestNodesSyncTwoNodes(t *testing.T) {
 	// init nodes
 	gen := genesis.New()
@@ -319,39 +404,6 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	}
 }
 
-func TestVerifyBlockSuccess(t *testing.T) {
-	gen := genesis.New()
-	v, err := NewValidatorFromGenesis(&gen)
-	if err != nil {
-		t.Errorf("new validator: %v", err)
-	}
-
-	_, key, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Errorf("generate key: %v", err)
-	}
-
-	n, err := NewNode(key, &gen)
-	if err != nil {
-		t.Errorf("new node: %v", err)
-	}
-
-	// t.Log("validator state: ", v.state)
-	// t.Log("node state:      ", n.state)
-
-	block, err := v.newBlock()
-	if err != nil {
-		t.Errorf("new block error: %v", err)
-	}
-
-	// t.Log("new block: ", block)
-	time.Sleep(1 * time.Millisecond)
-
-	if err := n.verifyBlock(block); err != nil {
-		t.Fatalf("verify block: %v", err)
-	}
-}
-
 func TestVerifySameBlockFailure(t *testing.T) {
 	gen := genesis.New()
 	v, _ := NewValidatorFromGenesis(&gen)
@@ -370,34 +422,5 @@ func TestVerifySameBlockFailure(t *testing.T) {
 		t.Error("same block inserted twice")
 	} else {
 		t.Log(err)
-	}
-}
-
-func TestVerifyTransactionSuccess(t *testing.T) {
-
-	gen := genesis.New()
-	pubKey, privKey, _ := ed25519.GenerateKey(nil)
-	addr, _ := PubKeyToAddress(pubKey)
-	gen.Alloc[addr] = 100
-
-	nd1, _ := NewNode(privKey, &gen)
-	_, privKey, _ = ed25519.GenerateKey(nil)
-	nd2, _ := NewNode(privKey, &gen)
-
-	tr, err := nd1.newTransaction(nd2.NodeAddress(), 10)
-	if err != nil {
-		t.Errorf("new transaction error: %v", err)
-	}
-
-	state1 := nd1.state.Copy()
-	err = verifyTransaction(state1, tr)
-	if err != nil {
-		t.Errorf("verify transaction: %v", err)
-	}
-
-	state2 := nd2.state.Copy()
-	err = verifyTransaction(state2, tr)
-	if err != nil {
-		t.Errorf("verify transaction: %v", err)
 	}
 }
