@@ -8,25 +8,6 @@ import (
 	"sync"
 )
 
-type Storage interface {
-	Put(key string, data uint64) error
-	PutMap(map[string]uint64) error
-	PutOrAdd(key string, amount uint64) error
-	Get(key string) (uint64, error)
-	// Operations
-	Sub(key string, amount uint64) error
-	Add(key string, amount uint64) error
-	Hash() (string, error)
-	// Copy
-	Copy() Storage
-	// Concurrency
-	sync.Locker
-	// String
-	fmt.Stringer
-}
-
-/* --- Implementation ----------------------------------------------------------------------------------------------- */
-
 type MapStorage struct {
 	alloc   map[string]uint64
 	mxAlloc sync.Mutex
@@ -80,8 +61,6 @@ func (m *MapStorage) Copy() Storage {
 	}
 }
 
-/* --- Operations --------------------------------------------------------------------------------------------------- */
-
 func (m *MapStorage) PutOrAdd(key string, amount uint64) error {
 	_, ok := m.alloc[key]
 	if ok {
@@ -131,8 +110,6 @@ func (m *MapStorage) String() string {
 
 	return fmt.Sprint(m.alloc)
 }
-
-/* --- Concurrency -------------------------------------------------------------------------------------------------- */
 
 func (m *MapStorage) Lock() {
 	m.mxAlloc.Lock()
