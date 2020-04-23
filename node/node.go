@@ -66,7 +66,7 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 
 		mxBlocks: &(sync.Mutex{}),
 		mxPeers:  &(sync.Mutex{}),
-		logger:   logger.New(logger.None),
+		logger:   logger.New(logger.All),
 	}, nil
 }
 

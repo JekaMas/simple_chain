@@ -36,10 +36,10 @@ func TestGenesis_BlockHashSame(t *testing.T) {
 		"one": 200,
 	}
 
-	hash1, _ := gen1.ToBlock().Hash()
-	hash2, _ := gen2.ToBlock().Hash()
+	block1 := gen1.ToBlock()
+	block2 := gen2.ToBlock()
 
-	if !reflect.DeepEqual(hash1, hash2) {
-		t.Fatalf("genesis block hash difference: \n%v vs %v", hash1, hash2)
+	if !reflect.DeepEqual(block1, block2) {
+		t.Fatalf("genesis blocks difference: \n%v vs %v", block1, block2)
 	}
 }

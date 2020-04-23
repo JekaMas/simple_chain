@@ -3,7 +3,6 @@ package node
 import (
 	"context"
 	"crypto/ed25519"
-	"fmt"
 	"simple_chain/genesis"
 	"simple_chain/msg"
 	"time"
@@ -62,7 +61,7 @@ func (c *Validator) startValidating() {
 	//endless loop
 	for {
 		if c.isMyTurn() {
-			fmt.Println(simplifyAddress(c.address), "validating block...")
+			c.logger.Infof("%v validating block...", simplifyAddress(c.address))
 			//get new block
 			block, err := c.newBlock()
 			if err != nil {
@@ -76,7 +75,7 @@ func (c *Validator) startValidating() {
 				panic(err)
 			}
 			//send new block
-			fmt.Println(simplifyAddress(c.address), "generated new block [", simplifyAddress(block.BlockHash), "]")
+			c.logger.Infof("%v generated new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
 			c.Broadcast(ctx, msg.Message{
 				From: c.address,
 				Data: block,
