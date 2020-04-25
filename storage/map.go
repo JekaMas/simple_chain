@@ -9,13 +9,13 @@ import (
 )
 
 type MapStorage struct {
-	alloc   map[string]uint64
+	Alloc   map[string]uint64
 	mxAlloc sync.Mutex
 }
 
 func NewMap() *MapStorage {
 	return &MapStorage{
-		alloc: make(map[string]uint64),
+		Alloc: make(map[string]uint64),
 	}
 }
 
@@ -31,17 +31,17 @@ func FromGenesis(genesis *genesis.Genesis) *MapStorage {
 }
 
 func (m *MapStorage) Put(key string, data uint64) error {
-	_, ok := m.alloc[key]
+	_, ok := m.Alloc[key]
 	if ok {
 		return errors.New("account already exists")
 	}
 
-	m.alloc[key] = data
+	m.Alloc[key] = data
 	return nil
 }
 
 func (m *MapStorage) Get(key string) (uint64, error) {
-	data, ok := m.alloc[key]
+	data, ok := m.Alloc[key]
 	if !ok {
 		return 0, errors.New("not found")
 	}
@@ -53,16 +53,16 @@ func (m *MapStorage) Copy() Storage {
 	defer m.Unlock()
 
 	alloc := make(map[string]uint64)
-	for key, value := range m.alloc {
+	for key, value := range m.Alloc {
 		alloc[key] = value
 	}
 	return &MapStorage{
-		alloc: alloc,
+		Alloc: alloc,
 	}
 }
 
 func (m *MapStorage) PutOrAdd(key string, amount uint64) error {
-	_, ok := m.alloc[key]
+	_, ok := m.Alloc[key]
 	if ok {
 		return m.Add(key, amount)
 	} else {
@@ -80,35 +80,35 @@ func (m *MapStorage) PutMap(alloc map[string]uint64) error {
 }
 
 func (m *MapStorage) Add(key string, amount uint64) error {
-	fund, ok := m.alloc[key]
+	fund, ok := m.Alloc[key]
 	if !ok {
 		return errors.New("no such account")
 	}
-	m.alloc[key] = fund + amount
+	m.Alloc[key] = fund + amount
 	return nil
 }
 
 func (m *MapStorage) Sub(key string, amount uint64) error {
-	fund, ok := m.alloc[key]
+	fund, ok := m.Alloc[key]
 	if !ok {
 		return errors.New("no such account")
 	}
 	if fund < amount {
 		return errors.New("insufficient funds")
 	}
-	m.alloc[key] = fund - amount
+	m.Alloc[key] = fund - amount
 	return nil
 }
 
 func (m *MapStorage) Hash() (string, error) {
-	return encode.HashAlloc(m.alloc)
+	return encode.HashAlloc(m.Alloc)
 }
 
 func (m *MapStorage) String() string {
 	m.Lock()
 	defer m.Unlock()
 
-	return fmt.Sprint(m.alloc)
+	return fmt.Sprint(m.Alloc)
 }
 
 func (m *MapStorage) Lock() {

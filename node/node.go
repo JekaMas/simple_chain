@@ -149,8 +149,8 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 	return fund, nil
 }
 
+// AddTransaction - nothing for simple node
 func (c *Node) AddTransaction(tr msg.Transaction) error {
-	//nothing for node
 	return nil
 }
 
@@ -225,45 +225,89 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 
 func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message msg.Message) error {
 	switch m := message.Data.(type) {
-	// get transaction from another peer
 	case msg.Transaction:
-		// add all transaction to transaction pool (for validator)
-		return c.AddTransaction(m)
-	// received block
+		return c.processTransaction(peer, m)
 	case msg.Block:
-		c.logger.Infof("%v receive block [%v] from %v",
-			simplifyAddress(c.address), simplifyAddress(m.BlockHash), simplifyAddress(peer.Address))
-		if err := c.verifyBlock(m); err != nil {
-			return fmt.Errorf("can't process message: %v", err)
-		}
-		if err := c.insertBlock(m); err != nil {
-			return fmt.Errorf("can't process message: %v", err)
-		}
-		c.logger.Infof("%v insert new block [%v]", simplifyAddress(c.address), simplifyAddress(m.BlockHash))
-	// send blocks to peer that requested
+		return c.processBlock(ctx, peer, m)
 	case msg.BlocksRequest:
-		// if my request
-		if m.From == c.NodeAddress() {
-			for id := m.BlockNumFrom; id <= m.BlockNumTo; id++ {
-				c.logger.Infof("%v send block [%v] to %v",
-					simplifyAddress(c.address), simplifyAddress(c.blocks[id].BlockHash), simplifyAddress(peer.Address))
-				c.SendTo(peer, ctx, c.GetBlockByNumber(id))
-			}
-		}
-	// get info from another peer
+		return c.processBlockRequest(ctx, peer, m)
 	case msg.NodeInfoResp:
-		c.mxBlocks.Lock()
-		defer c.mxBlocks.Unlock()
-		// blocks request
-		if c.lastBlockNum < m.BlockNum {
-			c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
-			c.SendTo(peer, ctx, msg.BlocksRequest{
-				From:         m.NodeName,
-				To:           c.NodeAddress(),
-				BlockNumFrom: c.lastBlockNum + 1,
-				BlockNumTo:   m.BlockNum,
-			})
+		return c.processNodeInfo(ctx, peer, m)
+	}
+	return nil
+}
+
+// processTransaction - received transaction
+func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error {
+	// check public key
+	addr, err := PubKeyToAddress(tr.PubKey)
+	if err != nil {
+		return fmt.Errorf("can't convert peer adress to key: %v", err)
+	}
+	if addr != peer.Address {
+		return errors.New("transaction key not belong to address")
+	}
+	// check signature
+	sig := tr.Signature
+	tr.Signature = nil
+	bts, err := tr.Bytes()
+	if err != nil {
+		return fmt.Errorf("can't convert transaction to bytes: %v", err)
+	}
+	if len(tr.PubKey) == 0 {
+		return errors.New("transaction key is empty")
+	}
+	if !ed25519.Verify(tr.PubKey, bts, sig) {
+		return errors.New("transaction signature is incorrect")
+	}
+
+	return c.AddTransaction(tr)
+}
+
+// processBlock - received block
+func (c *Node) processBlock(ctx context.Context, peer connectedPeer, block msg.Block) error {
+	c.logger.Infof("%v receive block [%v] from %v",
+		simplifyAddress(c.address), simplifyAddress(block.BlockHash), simplifyAddress(peer.Address))
+
+	if err := c.verifyBlock(block); err != nil {
+		return fmt.Errorf("can't process message: %v", err)
+	}
+
+	if err := c.insertBlock(block); err != nil {
+		return fmt.Errorf("can't process message: %v", err)
+	}
+
+	c.logger.Infof("%v insert new block [%v]",
+		simplifyAddress(c.address), simplifyAddress(block.BlockHash))
+	return nil
+}
+
+// send blocks to peer that requested
+func (c *Node) processBlockRequest(ctx context.Context, peer connectedPeer, req msg.BlocksRequest) error {
+	// if my request
+	if req.From == c.NodeAddress() {
+		for id := req.BlockNumFrom; id <= req.BlockNumTo; id++ {
+			c.logger.Infof("%v send block [%v] to %v",
+				simplifyAddress(c.address), simplifyAddress(c.blocks[id].BlockHash), simplifyAddress(peer.Address))
+			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
 		}
+	}
+	return nil
+}
+
+// get info from another peer
+func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.NodeInfoResp) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+	// blocks request
+	if c.lastBlockNum < res.BlockNum {
+		c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
+		c.SendTo(peer, ctx, msg.BlocksRequest{
+			From:         res.NodeName,
+			To:           c.NodeAddress(),
+			BlockNumFrom: c.lastBlockNum + 1,
+			BlockNumTo:   res.BlockNum,
+		})
 	}
 	return nil
 }
@@ -380,19 +424,6 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 	}
 	if fund < tr.Amount+tr.Fee {
 		return fmt.Errorf("insufficient funds: %v < %v", fund, tr.Amount+tr.Fee)
-	}
-	// check signature
-	sig := tr.Signature
-	tr.Signature = nil
-	bts, err := tr.Bytes()
-	if err != nil {
-		return fmt.Errorf("can't convert transaction to bytes: %v", err)
-	}
-	if len(tr.PubKey) == 0 {
-		return errors.New("transaction key is empty")
-	}
-	if !ed25519.Verify(tr.PubKey, bts, sig) {
-		return errors.New("transaction signature is incorrect")
 	}
 	return nil
 }

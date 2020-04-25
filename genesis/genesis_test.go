@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestGenesis_ToBlock(t *testing.T) {
+func TestGenesis_BlockSameWithTimeDelay(t *testing.T) {
 
 	gen := New()
 	block1 := gen.ToBlock()
@@ -23,7 +23,7 @@ func TestGenesis_ToBlock(t *testing.T) {
 	t.Logf("hash2: %v", block2.BlockHash)
 }
 
-func TestGenesis_BlockHashSame(t *testing.T) {
+func TestGenesis_BlockSameWithDifferentTransactionsOrder(t *testing.T) {
 	gen1 := New()
 	gen1.Alloc = map[string]uint64{
 		"one": 200,

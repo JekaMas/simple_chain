@@ -2,6 +2,8 @@ package node
 
 import (
 	"simple_chain/genesis"
+	"simple_chain/msg"
+	"simple_chain/storage"
 	"testing"
 	"time"
 )
@@ -30,4 +32,34 @@ func TestValidator(t *testing.T) {
 	go v2.startValidating()
 
 	time.Sleep(time.Millisecond * 100)
+}
+
+func TestValidator_popTransactions(t *testing.T) {
+	vd := Validator{
+		transactionPool: map[string]msg.Transaction{
+			"aaa": {From: "one", To: "two", Amount: 1},
+			"bbb": {From: "one", To: "two", Amount: 2},
+			"ccc": {From: "one", To: "two", Amount: 3},
+			"ddd": {From: "one", To: "two", Amount: 4},
+			"eee": {From: "one", To: "two", Amount: 5},
+		},
+		Node: Node{
+			state: &storage.MapStorage{
+				Alloc: map[string]uint64{
+					"one": 200,
+					"two": 50,
+				},
+			},
+		},
+	}
+
+	txs := vd.popTransactions(3)
+	if len(txs) != 3 {
+		t.Fatalf("wrong transactions count")
+	}
+
+	txs = vd.popTransactions(3)
+	if len(txs) != 2 {
+		t.Fatalf("wrong transactions count")
+	}
 }
