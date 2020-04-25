@@ -59,8 +59,8 @@ func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	return nil
 }
 
-func (c *Validator) processBlock(ctx context.Context, peer connectedPeer, block msg.Block) error {
-	err := c.Node.processBlock(ctx, peer, block)
+func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
+	err := c.Node.processBlockMessage(ctx, peer, block)
 	if err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}

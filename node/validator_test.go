@@ -55,11 +55,17 @@ func TestValidator_popTransactions(t *testing.T) {
 
 	txs := vd.popTransactions(3)
 	if len(txs) != 3 {
-		t.Fatalf("wrong transactions count")
+		t.Fatalf("wrong transactions count: want=%v get=%v", 3, len(txs))
+	}
+	if len(vd.transactionPool) != 2 {
+		t.Fatalf("wrong transactions count: want=%v get=%v", 2, len(vd.transactionPool))
 	}
 
 	txs = vd.popTransactions(3)
 	if len(txs) != 2 {
-		t.Fatalf("wrong transactions count")
+		t.Fatalf("wrong transactions count: want=%v get=%v", 2, len(txs))
+	}
+	if len(vd.transactionPool) != 0 {
+		t.Fatalf("wrong transactions count: want=%v get=%v", 0, len(vd.transactionPool))
 	}
 }
