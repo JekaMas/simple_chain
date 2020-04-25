@@ -34,7 +34,8 @@ type Node struct {
 	lastBlockNum uint64
 
 	//chain
-	blocks []msg.Block
+	blocks    []msg.Block
+	blockPool BlockPool
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
@@ -228,7 +229,7 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 	case msg.Transaction:
 		return c.processTransaction(peer, m)
 	case msg.Block:
-		return c.processBlock(ctx, peer, m)
+		return c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
 		return c.processBlockRequest(ctx, peer, m)
 	case msg.NodeInfoResp:
@@ -265,20 +266,42 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 }
 
 // processBlock - received block
-func (c *Node) processBlock(ctx context.Context, peer connectedPeer, block msg.Block) error {
+func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
 	c.logger.Infof("%v receive block [%v] from %v",
 		simplifyAddress(c.address), simplifyAddress(block.BlockHash), simplifyAddress(peer.Address))
 
-	if err := c.verifyBlock(block); err != nil {
+	// if the block is out of turn
+	if block.BlockNum > c.lastBlockNum+1 {
+		return c.blockPool.AddBlock(block)
+	}
+
+	// process block from message
+	if err := c.processBlock(block); err != nil {
 		return fmt.Errorf("can't process message: %v", err)
+	}
+
+	// check block pool for blocks
+	if c.blockPool.HasBlockNum(c.lastBlockNum + 1) {
+		block, err := c.blockPool.PopBlock(c.lastBlockNum + 1)
+		if err != nil {
+			return fmt.Errorf("can't process block pool: %v", err)
+		}
+		return c.processBlock(block)
+	}
+
+	return nil
+}
+
+func (c *Node) processBlock(block msg.Block) error {
+	if err := c.verifyBlock(block); err != nil {
+		return fmt.Errorf("can't process block: %v", err)
 	}
 
 	if err := c.insertBlock(block); err != nil {
-		return fmt.Errorf("can't process message: %v", err)
+		return fmt.Errorf("can't process block: %v", err)
 	}
 
-	c.logger.Infof("%v insert new block [%v]",
-		simplifyAddress(c.address), simplifyAddress(block.BlockHash))
+	c.logger.Infof("%v insert new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
 	return nil
 }
 
