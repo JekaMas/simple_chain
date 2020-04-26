@@ -136,7 +136,7 @@ func TestApplyTransactionSuccess(t *testing.T) {
 // !!!
 func TestNodeInsertBlockSuccess(t *testing.T) {
 	gen := genesis.New()
-	v, err := NewValidatorFromGenesis(&gen)
+	v, err := NewValidatorFromGenesis(0, &gen)
 	if err != nil {
 		t.Errorf("new validator: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestVerifyBlockSuccess(t *testing.T) {
 		"three": 40,
 	}
 
-	v, err := NewValidatorFromGenesis(&gen)
+	v, err := NewValidatorFromGenesis(0, &gen)
 	if err != nil {
 		t.Errorf("new validator: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	valAddr, _ := PubKeyToAddress(pubKey)
 	gen.Alloc[valAddr] = 70
 
-	validator, _ := NewValidator(privateKey, &gen)
+	validator, _ := NewValidator(privateKey, 0, &gen)
 	validator.validators = []crypto.PublicKey{validator.NodeKey()}
 
 	NewTestNode := func() *Node {
@@ -425,7 +425,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 
 func TestVerifySameBlockFailure(t *testing.T) {
 	gen := genesis.New()
-	v, _ := NewValidatorFromGenesis(&gen)
+	v, _ := NewValidatorFromGenesis(0, &gen)
 	block, _ := v.newBlock()
 
 	_, privKey, _ := ed25519.GenerateKey(nil)

@@ -1,7 +1,6 @@
 package node
 
 import (
-	"crypto"
 	"crypto/ed25519"
 	"simple_chain/genesis"
 	"simple_chain/msg"
@@ -13,12 +12,12 @@ import (
 func TestValidator(t *testing.T) {
 	gen := genesis.New()
 	// validator 1
-	v1, err := NewValidatorFromGenesis(&gen)
+	v1, err := NewValidatorFromGenesis(0, &gen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// validator 2
-	v2, err := NewValidatorFromGenesis(&gen)
+	v2, err := NewValidatorFromGenesis(1, &gen)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,36 +73,37 @@ func TestValidator_popTransactions(t *testing.T) {
 
 func TestWaitMissedValidator(t *testing.T) {
 
-	pubKey1, privKey1, _ := ed25519.GenerateKey(nil)
-	pubKey2, privKey2, _ := ed25519.GenerateKey(nil)
-	pubKey3, privKey3, _ := ed25519.GenerateKey(nil)
-
 	gen := genesis.New()
-	gen.Validators = []crypto.PublicKey{pubKey1, pubKey2, pubKey3}
+	var vds []*Validator
+	for i := 0; i < 3; i++ {
+		pubKey, privKey, _ := ed25519.GenerateKey(nil)
+		gen.Validators = append(gen.Validators, pubKey)
+		vd, _ := NewValidator(privKey, 0, &gen)
+		vds = append(vds, vd)
+	}
 
-	vd1, _ := NewValidator(privKey1, &gen)
-	vd2, _ := NewValidator(privKey2, &gen)
-	vd3, _ := NewValidator(privKey3, &gen)
+	for i, vd := range vds {
+		vd.validators = gen.Validators
+		t.Logf("validator1 %v len=%v", simplifyAddress(vd.NodeAddress()), len(vd.validators))
 
-	vd1.validators = gen.Validators
-	vd2.validators = gen.Validators
-	vd3.validators = gen.Validators
-
-	t.Logf("validator1 %v len=%v", simplifyAddress(vd1.NodeAddress()), len(vd1.validators))
-	t.Logf("validator2 %v len=%v", simplifyAddress(vd2.NodeAddress()), len(vd2.validators))
-	t.Logf("validator3 %v len=%v", simplifyAddress(vd3.NodeAddress()), len(vd3.validators))
-
-	// do nothing with second validator
-	go vd1.startValidating()
-	go vd3.startValidating()
+		for j, vdPeer := range vds {
+			if i != j {
+				_ = vd.AddPeer(vdPeer)
+			}
+		}
+		// do nothing with second validator
+		if i != 2 {
+			go vd.startValidating()
+		}
+	}
 
 	// wait validating
 	time.Sleep(time.Millisecond * 10)
 
 	// check states
-	for i, vd := range []*Validator{vd1, vd2, vd3} {
+	for i, vd := range vds {
 		if len(vd.blocks) != 2 {
-			t.Fatalf("wrong blocks number validator%v: want=%v, get=%v", i, 2, len(vd1.blocks))
+			t.Fatalf("wrong blocks number validator%v: want=%v, get=%v", i+1, 2, len(vd.blocks))
 		}
 	}
 }

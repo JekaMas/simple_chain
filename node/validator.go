@@ -20,31 +20,32 @@ type Validator struct {
 	//transaction hash - > transaction
 	transactionPool map[string]msg.Transaction
 	//validator index
-	index int
+	index uint64
 }
 
-func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator, error) {
+func NewValidator(key ed25519.PrivateKey, index uint64, genesis *genesis.Genesis) (*Validator, error) {
 	// init node
 	nd, err := NewNode(key, genesis)
 	if err != nil {
 		return nil, err
 	}
+
 	// return new validator
 	return &Validator{
 		Node:            *nd,
 		transactionPool: make(map[string]msg.Transaction),
-		index:           len(genesis.Validators) - 1,
+		index:           index,
 	}, nil
 }
 
 // NewValidatorFromGenesis - additional constructor
-func NewValidatorFromGenesis(genesis *genesis.Genesis) (*Validator, error) {
+func NewValidatorFromGenesis(index uint64, genesis *genesis.Genesis) (*Validator, error) {
 	// generate validator key
 	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
 	}
-	return NewValidator(privateKey, genesis)
+	return NewValidator(privateKey, index, genesis)
 }
 
 // AddTransaction - add to transaction pool (for validator)
@@ -189,5 +190,7 @@ func (c *Validator) popTransactions(maxCount uint64) []msg.Transaction {
 func (c *Validator) isMyTurn() bool {
 	//blockNum remainder
 	r := c.lastBlockNum % uint64(len(c.validators))
+	//c.logger.Infof("validator%v index=%v/%v my_turn=%v",
+	//	c.index, r, len(c.validators)-1, r == uint64(c.index))
 	return r == uint64(c.index)
 }
