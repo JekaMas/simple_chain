@@ -33,7 +33,7 @@ func FromGenesis(genesis *genesis.Genesis) *MapStorage {
 func (m *MapStorage) Put(key string, data uint64) error {
 	_, ok := m.Alloc[key]
 	if ok {
-		return errors.New("account already exists")
+		return fmt.Errorf("account '%v' already exists", key)
 	}
 
 	m.Alloc[key] = data

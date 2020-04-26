@@ -3,6 +3,7 @@
 package node
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"fmt"
 	"simple_chain/genesis"
@@ -318,13 +319,16 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	gen.Alloc[valAddr] = 70
 
 	validator, _ := NewValidator(privateKey, &gen)
+	validator.validators = []crypto.PublicKey{validator.NodeKey()}
 
 	NewTestNode := func() *Node {
 		// generate one node with one validator
 		_, privateKey, _ := ed25519.GenerateKey(nil)
 		nd, _ := NewNode(privateKey, &gen)
+		nd.validators = []crypto.PublicKey{validator.NodeKey()}
 		return nd
 	}
+
 	nd1 := NewTestNode()
 	nd2 := NewTestNode()
 

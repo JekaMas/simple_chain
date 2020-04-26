@@ -24,8 +24,6 @@ type Validator struct {
 }
 
 func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator, error) {
-	// append itself to the validators
-	genesis.Validators = append(genesis.Validators, key.Public())
 	// init node
 	nd, err := NewNode(key, genesis)
 	if err != nil {
@@ -89,7 +87,7 @@ func (c *Validator) startValidating() {
 				panic(err)
 			}
 			// fixme when get own block in peer loop
-			err = c.state.Put(c.address, 1000)
+			err = c.state.PutOrAdd(c.address, 1000)
 			if err != nil {
 				// fixme panic
 				panic(err)

@@ -11,6 +11,7 @@ import (
 	"simple_chain/genesis"
 	"simple_chain/logger"
 	"simple_chain/msg"
+	"simple_chain/pool"
 	"simple_chain/storage"
 	"sync"
 )
@@ -35,7 +36,7 @@ type Node struct {
 
 	//chain
 	blocks    []msg.Block
-	blockPool BlockPool
+	blockPool pool.BlockPool
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
@@ -452,6 +453,10 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 }
 
 func (c *Node) validatorAddr(b msg.Block) (string, error) {
+	if len(c.validators) == 0 {
+		return "", errors.New("no validators")
+	}
+
 	validatorKey := c.validators[int(b.BlockNum%uint64(len(c.validators)))]
 	return PubKeyToAddress(validatorKey)
 }
