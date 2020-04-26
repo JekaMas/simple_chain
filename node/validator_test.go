@@ -12,12 +12,12 @@ import (
 func TestValidator(t *testing.T) {
 	gen := genesis.New()
 	// validator 1
-	v1, err := NewValidatorFromGenesis(0, &gen)
+	v1, err := NewValidatorFromGenesis(&gen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// validator 2
-	v2, err := NewValidatorFromGenesis(1, &gen)
+	v2, err := NewValidatorFromGenesis(&gen)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestWaitMissedValidator(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		pubKey, privKey, _ := ed25519.GenerateKey(nil)
 		gen.Validators = append(gen.Validators, pubKey)
-		vd, _ := NewValidator(privKey, 0, &gen)
+		vd, _ := NewValidator(privKey, &gen)
 		vds = append(vds, vd)
 	}
 
@@ -106,4 +106,12 @@ func TestWaitMissedValidator(t *testing.T) {
 			t.Fatalf("wrong blocks number validator%v: want=%v, get=%v", i+1, 2, len(vd.blocks))
 		}
 	}
+}
+
+func TestValidatorReward(t *testing.T) {
+	/* TODO */
+}
+
+func TestValidatorMining(t *testing.T) {
+	/* TODO */
 }

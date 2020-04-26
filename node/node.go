@@ -385,13 +385,18 @@ func (c *Node) verifyBlock(block msg.Block) error {
 
 	// verify transactions
 	stateCopy := c.state.Copy()
-	for _, tr := range block.Transactions {
+	for _, tr := range block.Transactions[1:] {
 		if err := verifyTransaction(stateCopy, tr); err != nil {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
 		if err := applyTransaction(stateCopy, validatorAddr, tr); err != nil {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
+	}
+	// reward transaction
+	coinbase := block.Transactions[0]
+	if coinbase.From != "" || coinbase.To != validatorAddr || coinbase.Amount != BlockReward {
+		return errors.New("wrong coinbase transaction")
 	}
 
 	// verify state hash
@@ -476,20 +481,37 @@ func (c *Node) insertBlock(b msg.Block) error {
 	c.mxBlocks.Lock()
 	defer c.mxBlocks.Unlock()
 
-	for _, tr := range b.Transactions {
-		validatorAddr, err := c.validatorAddr(b)
-		if err != nil {
-			return err
-		}
+	validatorAddr, err := c.validatorAddr(b)
+	if err != nil {
+		return err
+	}
 
-		err = applyTransaction(c.state, validatorAddr, tr)
+	for _, tr := range b.Transactions[1:] {
+		err := applyTransaction(c.state, validatorAddr, tr)
 		if err != nil {
 			return err
 		}
 	}
 
+	err = applyCoinbaseTransaction(c.state, b.Transactions[0])
+	if err != nil {
+		return err
+	}
+
 	c.blocks = append(c.blocks, b)
 	c.lastBlockNum += 1
+	return nil
+}
+
+func applyCoinbaseTransaction(state storage.Storage, tr msg.Transaction) error {
+	state.Lock()
+	defer state.Unlock()
+
+	err := state.Add(tr.To, tr.Amount)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

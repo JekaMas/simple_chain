@@ -8,6 +8,7 @@ import (
 
 type Block struct {
 	BlockNum      uint64
+	Nonce         uint64
 	Timestamp     int64
 	Transactions  []Transaction
 	BlockHash     string `json:"-"`
