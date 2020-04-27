@@ -47,7 +47,15 @@ type Node struct {
 	logger   logger.Logger
 }
 
-func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
+func NewNode(genesis *genesis.Genesis) (*Node, error) {
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return nil, err
+	}
+	return NewNodeWithKey(genesis, key)
+}
+
+func NewNodeWithKey(genesis *genesis.Genesis, key ed25519.PrivateKey) (*Node, error) {
 	address, err := PubKeyToAddress(key.Public())
 	if err != nil {
 		return nil, err
@@ -371,12 +379,6 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
 
-	// reward transaction
-	coinbase := block.Transactions[0]
-	if coinbase.From != "" || coinbase.Amount != BlockReward {
-		return errors.New("wrong coinbase transaction")
-	}
-
 	validatorAddr, err := c.validatorAddr(block)
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
@@ -392,6 +394,14 @@ func (c *Node) verifyBlock(block msg.Block) error {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
 	}
+	// verify coinbase transaction
+	coinbase := block.Transactions[0]
+	if coinbase.From != "" || coinbase.Amount != BlockReward {
+		return errors.New("wrong coinbase transaction")
+	}
+	if err := applyCoinbaseTransaction(stateCopy, coinbase); err != nil {
+		return fmt.Errorf("can't verify block: %v", err)
+	}
 
 	// verify state hash
 	stateHash, err := stateCopy.Hash()
@@ -404,12 +414,16 @@ func (c *Node) verifyBlock(block msg.Block) error {
 
 	// check signature
 	sig := block.Signature
+	key := block.PubKey
+
 	block.Signature = nil
+	block.PubKey = nil
+
 	bts, err := block.Bytes()
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
 	}
-	if !ed25519.Verify(block.PubKey, bts, sig) {
+	if !ed25519.Verify(key, bts, sig) {
 		return errors.New("block signature is incorrect")
 	}
 

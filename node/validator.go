@@ -22,9 +22,9 @@ type Validator struct {
 	transactionPool pool.TransactionPool
 }
 
-func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator, error) {
+func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
 	// init node
-	nd, err := NewNode(key, genesis)
+	nd, err := NewNode(genesis)
 	if err != nil {
 		return nil, err
 	}
@@ -34,16 +34,6 @@ func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator,
 		Node:            *nd,
 		transactionPool: pool.NewTransactionPool(),
 	}, nil
-}
-
-// NewValidatorFromGenesis - additional constructor
-func NewValidatorFromGenesis(genesis *genesis.Genesis) (*Validator, error) {
-	// generate validator key
-	_, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		return nil, err
-	}
-	return NewValidator(privateKey, genesis)
 }
 
 // AddTransaction - add to transaction pool (for validator)
@@ -76,8 +66,9 @@ func (c *Validator) startValidating() {
 		// validate new block
 		block, err := c.newBlock()
 		if err != nil {
-			// fixme panic
-			panic(err)
+			c.logger.Errorf("error generating block: %v", err)
+			// stop validating
+			return
 		}
 
 		// send new block
@@ -126,7 +117,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	}
 
 	// state hash
-	block.StateHash, err = c.state.Hash()
+	block.StateHash, err = stateCopy.Hash()
 	if err != nil {
 		return msg.Block{}, err
 	}
