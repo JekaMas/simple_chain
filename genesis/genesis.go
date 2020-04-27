@@ -1,7 +1,6 @@
 package genesis
 
 import (
-	"crypto"
 	"simple_chain/encode"
 	"simple_chain/msg"
 	"sort"
@@ -17,15 +16,10 @@ var (
 type Genesis struct {
 	// account -> funds
 	Alloc map[string]uint64
-	// list of validators public keys
-	Validators []crypto.PublicKey
 }
 
 func New() Genesis {
-	return Genesis{
-		Alloc:      make(map[string]uint64),
-		Validators: []crypto.PublicKey{},
-	}
+	return Genesis{make(map[string]uint64)}
 }
 
 func (g Genesis) ToBlock() msg.Block {

@@ -43,7 +43,7 @@ func (m *MapStorage) Put(key string, data uint64) error {
 func (m *MapStorage) Get(key string) (uint64, error) {
 	data, ok := m.Alloc[key]
 	if !ok {
-		return 0, errors.New("not found")
+		return 0, errors.New("account not found")
 	}
 	return data, nil
 }

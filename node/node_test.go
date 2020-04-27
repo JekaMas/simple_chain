@@ -3,17 +3,15 @@
 package node
 
 import (
-	"fmt"
+	"reflect"
 	"simple_chain/genesis"
 	"simple_chain/msg"
-	"sync"
 	"testing"
 	"time"
 )
 
 /* --- BAD ---------------------------------------------------------------------------------------------------------- */
 
-// !!!
 //func TestSyncBlockSuccess(t *testing.T) {
 //	numOfValidators := 3
 //	numOfPeers := 5
@@ -113,256 +111,123 @@ import (
 //	}
 //}
 
-func TestRace(t *testing.T) {
-	var wg sync.WaitGroup
-	wg.Add(5)
-	for i := 0; i < 5; i++ {
-		go func() {
-			fmt.Println(i) // Not the 'i' you are looking for.
-			wg.Done()
-		}()
+/* --- GOOD --------------------------------------------------------------------------------------------------------- */
+
+func TestNodesSyncTwoNodes(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one": 200,
+		"two": 50,
 	}
-	wg.Wait()
-	t.Logf("success")
+
+	nd1, _ := NewNode(&gen)
+	nd2, _ := NewNode(&gen)
+
+	vd, _ := NewValidator(&gen)
+	err := vd.AddTransaction(msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 100,
+		Fee:    10,
+	})
+	if err != nil {
+		t.Errorf("add transaction error: %v", err)
+	}
+
+	block, _ := vd.newBlock()
+
+	if err := nd1.insertBlock(block); err != nil {
+		t.Fatalf("insert block err: %v", err)
+	}
+
+	if err := nd1.AddPeer(nd2); err != nil {
+		t.Fatalf("add peer err: %v", err)
+	}
+
+	time.Sleep(1 * time.Millisecond)
+
+	if len(nd2.blocks) != 2 {
+		t.Fatalf("no block was synced")
+	}
+
+	if !reflect.DeepEqual(nd1.state, nd2.state) {
+		t.Fatalf("wrong synced state")
+	}
 }
 
-// !!!
-func TestApplyTransactionSuccess(t *testing.T) {
-	// todo
-}
-
-// !!!
 func TestNodeInsertBlockSuccess(t *testing.T) {
 	gen := genesis.New()
-	v, err := NewValidator(&gen)
-	if err != nil {
-		t.Errorf("new validator: %v", err)
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
 	}
 
-	n, err := NewNode(&gen)
-	if err != nil {
-		t.Errorf("new node: %v", err)
-	}
+	vd, _ := NewValidator(&gen)
+	nd, _ := NewNode(&gen)
+	_ = vd.AddTransaction(msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 10,
+		Fee:    1,
+	})
 
-	// t.Log("validator state: ", v.state)
-	// t.Log("node state:      ", n.state)
-
-	block, err := v.newBlock()
+	block, err := vd.newBlock()
 	if err != nil {
 		t.Errorf("new block error: %v", err)
 	}
 
-	// t.Log("new block: ", block)
-	time.Sleep(1 * time.Millisecond)
+	if err := nd.insertBlock(block); err != nil {
+		t.Fatalf("insert block: %v", err)
+	}
 
-	if err := n.verifyBlock(block); err != nil {
-		t.Fatalf("verify block: %v", err)
+	if v, _ := nd.state.Get("one"); v != 9 {
+		t.Fatalf("wrong 'one' state: get=%v want=%v'", v, 9)
+	}
+
+	if v, _ := nd.state.Get("two"); v != 40 {
+		t.Fatalf("wrong 'two' state: get=%v want=%v'", v, 40)
+	}
+
+	if v, _ := nd.state.Get(vd.NodeAddress()); v != BlockReward+1 {
+		t.Fatalf("wrong 'val' state: get=%v want=%v'", v, BlockReward+1)
 	}
 }
 
-// !!! todo sigfault
-//func TestNodeBlockProcessing(t *testing.T) {
-//	// generate validator key
-//	pubKey, _, err := ed25519.GenerateKey(nil)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	validatorAddr, err := PubKeyToAddress(pubKey)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	// generate one node with one validator
-//	nd := &Node{validators: []crypto.PublicKey{pubKey}}
-//	// initial state
-//	nd.state = storage.NewMap()
-//	nd.state.Put("one", 200)
-//	nd.state.Put("two", 50)
-//	nd.state.Put(validatorAddr, 50)
-//
-//	// insert one block with one transaction
-//	err = nd.insertBlock(msg.Block{
-//		BlockNum: 1,
-//		Transactions: []msg.Transaction{
-//			{
-//				From:   "one",
-//				To:     "two",
-//				Fee:    10,
-//				Amount: 100,
-//			},
-//		},
-//	})
-//
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	// get current state
-//	one, _ := nd.state.Get("one")
-//	two, _ := nd.state.Get("two")
-//	val, _ := nd.state.Get(validatorAddr)
-//
-//	// check current state
-//	if one != 90 {
-//		t.Errorf("first account wrong state %v != %v", one, 90)
-//	}
-//	if two != 150 {
-//		t.Errorf("seccond account wrong state %v != %v", two, 150)
-//	}
-//	if val != 60 {
-//		t.Errorf("validator account wrong state %v != %v", val, 60)
-//	}
-//}
+func TestApplyTransactionSuccess(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
 
-// !!!
-func TestVerifyTransactionSuccess(t *testing.T) {
-	//
-	//gen := genesis.New()
-	//pubKey, privKey, _ := ed25519.GenerateKey(nil)
-	//addr, _ := PubKeyToAddress(pubKey)
-	//gen.Alloc[addr] = 100
-	//
-	//nd1, _ := NewNode(&gen, privKey)
-	//_, privKey, _ = ed25519.GenerateKey(nil)
-	//nd2, _ := NewNode(&gen, privKey)
-	//
-	//tr, err := nd1.newTransaction(nd2.NodeAddress(), 10)
-	//if err != nil {
-	//	t.Errorf("new transaction error: %v", err)
-	//}
-	//
-	//state1 := nd1.state.Copy()
-	//err = verifyTransaction(state1, tr)
-	//if err != nil {
-	//	t.Errorf("verify transaction: %v", err)
-	//}
-	//
-	//state2 := nd2.state.Copy()
-	//err = verifyTransaction(state2, tr)
-	//if err != nil {
-	//	t.Errorf("verify transaction: %v", err)
-	//}
+	nd, _ := NewNode(&gen)
+	vd, _ := NewNode(&gen)
+
+	tr := msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 10,
+		Fee:    1,
+	}
+
+	if err := applyTransaction(nd.state, vd.NodeAddress(), tr); err != nil {
+		t.Errorf("apply transaction error: %v", err)
+	}
+
+	if v, _ := nd.state.Get("one"); v != 9 {
+		t.Fatalf("wrong 'one' state: get=%v want=%v'", v, 9)
+	}
+
+	if v, _ := nd.state.Get("two"); v != 40 {
+		t.Fatalf("wrong 'two' state: get=%v want=%v'", v, 40)
+	}
+
+	if v, _ := nd.state.Get(vd.NodeAddress()); v != 1 {
+		t.Fatalf("wrong 'val' state: get=%v want=%v'", v, 1)
+	}
 }
-
-//func TestNodesSyncTwoNodes(t *testing.T) {
-//	// init nodes
-//	gen := genesis.New()
-//	gen.Alloc = map[string]uint64{
-//		"one": 200,
-//		"two": 50,
-//	}
-//
-//	pubKey, privateKey, _ := ed25519.GenerateKey(nil)
-//	valAddr, _ := PubKeyToAddress(pubKey)
-//	gen.Alloc[valAddr] = 70
-//
-//	validator, _ := NewValidator(privateKey, &gen)
-//	validator.validators = []crypto.PublicKey{validator.NodeKey()}
-//
-//	NewTestNode := func() *Node {
-//		// generate one node with one validator
-//		_, privateKey, _ := ed25519.GenerateKey(nil)
-//		nd, _ := NewNode(privateKey, &gen)
-//		nd.validators = []crypto.PublicKey{validator.NodeKey()}
-//		return nd
-//	}
-//
-//	nd1 := NewTestNode()
-//	nd2 := NewTestNode()
-//
-//	t.Logf("genesis block: [%v]", simplifyAddress(nd1.blocks[0].BlockHash))
-//
-//	tr := msg.Transaction{
-//		From:   "one",
-//		To:     "two",
-//		Fee:    10,
-//		Amount: 100,
-//		PubKey: nd1.NodeKey().(ed25519.PublicKey),
-//	}
-//
-//	tr, err := nd1.SignTransaction(tr)
-//	if err != nil {
-//		t.Fatalf("sign transaction: %v", err)
-//	}
-//
-//	err = validator.AddTransaction(tr)
-//	if err != nil {
-//		t.Fatalf("add transaction: %v", err)
-//	}
-//
-//	_, err = validator.newBlock()
-//	if err != nil {
-//		t.Fatalf("new block: %v", err)
-//	}
-//
-//	// add one block
-//	//err = nd1.insertBlock(block)
-//	//if err != nil {
-//	//	t.Fatalf("insert block: %v", err)
-//	//}
-//
-//	t.Logf("insert block [%v] to %v",
-//		simplifyAddress(validator.blocks[1].BlockHash), simplifyAddress(nd1.NodeAddress()))
-//
-//	t.Logf("node1 %v", simplifyAddress(nd1.NodeAddress()))
-//	// t.Logf("node2 %v", simplifyAddress(nd2.NodeAddress()))
-//	t.Logf("valid %v", simplifyAddress(validator.NodeAddress()))
-//
-//	// connect peers
-//	peers := []*Node{
-//		&validator.Node,
-//		nd1,
-//		nd2,
-//	}
-//	for i := 0; i < len(peers); i++ {
-//		for j := i + 1; j < len(peers); j++ {
-//			if err := peers[i].AddPeer(peers[j]); err != nil {
-//				t.Error(err)
-//			}
-//		}
-//	}
-//
-//	// wait processing
-//	time.Sleep(5 * time.Millisecond)
-//
-//	t.Logf("node1 %v state: %v", simplifyAddress(nd1.NodeAddress()), nd1.state.String())
-//	t.Logf("node2 [%v] state: %v", simplifyAddress(nd2.NodeAddress()), nd2.state.String())
-//	t.Logf("valid %v state: %v", simplifyAddress(validator.NodeAddress()), validator.state.String())
-//
-//	// check states
-//	for i := 0; i < len(peers); i++ {
-//		// get balances
-//		one, err := peers[i].GetBalance("one")
-//		if err != nil {
-//			t.Error(err)
-//		}
-//		two, err := peers[i].GetBalance("two")
-//		if err != nil {
-//			t.Error(err)
-//		}
-//		valBalance, err := peers[i].GetBalance(validator.NodeAddress())
-//		if err != nil {
-//			t.Error(err)
-//		}
-//
-//		// check balances
-//		if valBalance != 70+10 {
-//			t.Fatalf("wrong second validator's state: get=%v, want=%v ",
-//				valBalance, 70+10)
-//		}
-//		if one != 200-(100+10) {
-//			t.Fatalf("wrong first node's state: get=%v, want=%v ",
-//				one, 200-(100+10))
-//		}
-//		if two != 50+100 {
-//			t.Fatalf("wrong second node's state: get=%v, want=%v ",
-//				two, 50+100)
-//		}
-//	}
-//}
-
-/* --- GOOD --------------------------------------------------------------------------------------------------------- */
 
 func TestVerifyBlockSuccess(t *testing.T) {
 	gen := genesis.New()
@@ -376,12 +241,10 @@ func TestVerifyBlockSuccess(t *testing.T) {
 	nd, _ := NewNode(&gen)
 
 	err := vd.AddTransaction(msg.Transaction{
-		From:      "two",
-		To:        "one",
-		Amount:    10,
-		Fee:       20,
-		PubKey:    nil,
-		Signature: nil,
+		From:   "two",
+		To:     "one",
+		Amount: 10,
+		Fee:    20,
 	})
 	if err != nil {
 		t.Errorf("add transaction error: %v", err)
@@ -392,10 +255,36 @@ func TestVerifyBlockSuccess(t *testing.T) {
 		t.Errorf("new block error: %v", err)
 	}
 
-	time.Sleep(1 * time.Millisecond)
-
 	if err := nd.verifyBlock(block); err != nil {
 		t.Fatalf("verify block: %v", err)
+	}
+}
+
+func TestVerifyTransactionSuccess(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
+
+	nd1, _ := NewNode(&gen)
+	nd2, _ := NewNode(&gen)
+
+	tr := msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 19,
+		Fee:    1,
+	}
+	tr, _ = nd1.SignTransaction(tr)
+
+	if err := verifyTransaction(nd1.state.Copy(), tr); err != nil {
+		t.Errorf("verify transaction error: %v", err)
+	}
+
+	if err := verifyTransaction(nd2.state.Copy(), tr); err != nil {
+		t.Errorf("verify transaction error: %v", err)
 	}
 }
 

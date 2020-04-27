@@ -371,15 +371,17 @@ type Block struct {
 }
 */
 func (c *Node) verifyBlock(block msg.Block) error {
-	// block num
 	if block.BlockNum < 0 {
 		return errors.New("incorrect block num")
 	}
 	if block.BlockNum <= c.lastBlockNum {
 		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
+	if len(block.Transactions) == 0 {
+		return errors.New("no coinbase transaction")
+	}
 
-	validatorAddr, err := c.validatorAddr(block)
+	validatorAddr, err := PubKeyToAddress(block.PubKey)
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
 	}
@@ -459,20 +461,11 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 	return nil
 }
 
-func (c *Node) validatorAddr(b msg.Block) (string, error) {
-	if len(b.Transactions) == 0 {
-		return "", errors.New("incorrect block")
-	}
-
-	coinbase := b.Transactions[0]
-	return coinbase.To, nil
-}
-
 func (c *Node) insertBlock(b msg.Block) error {
 	c.mxBlocks.Lock()
 	defer c.mxBlocks.Unlock()
 
-	validatorAddr, err := c.validatorAddr(b)
+	validatorAddr, err := PubKeyToAddress(b.PubKey)
 	if err != nil {
 		return err
 	}
