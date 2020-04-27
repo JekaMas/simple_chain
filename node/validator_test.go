@@ -1,62 +1,139 @@
 package node
 
 import (
-	"reflect"
+	"context"
 	"simple_chain/genesis"
+	"simple_chain/msg"
 	"testing"
 	"time"
 )
 
-func TestValidator(t *testing.T) {
-	gen := genesis.New()
-	// validator 1
-	v1, err := NewValidator(&gen)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// validator 2
-	v2, err := NewValidator(&gen)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = v1.AddPeer(v2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	time.Sleep(time.Millisecond * 10)
-
-	go v1.startValidating()
-	go v2.startValidating()
-
-	time.Sleep(time.Millisecond * 100)
-
-	if len(v1.blocks) <= 1 || len(v2.blocks) <= 1 {
-		t.Fatalf("no blocks validated")
-	}
-
-	if !reflect.DeepEqual(v1.blocks, v2.blocks) {
-		t.Fatalf("validators not synced: \n%v vs \n%v",
-			v1.blocks, v2.blocks)
-	}
-}
-
-func TestValidator_Reward(t *testing.T) {
-	/* TODO */
-}
-
 func TestValidator_Mining(t *testing.T) {
-	/* TODO */
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one": 20,
+		"two": 30,
+	}
+
+	vd, _ := NewValidator(&gen)
+	nd, _ := NewNode(&gen)
+	_ = vd.AddTransaction(msg.Transaction{
+		From:   "two",
+		To:     "one",
+		Amount: 10,
+		Fee:    20,
+	})
+
+	err := vd.AddPeer(nd)
+	if err != nil {
+		t.Fatalf("can't add peer: %v", err)
+	}
+
+	func() {
+		go vd.startValidating()
+		select {
+		case <-time.After(time.Second * 1):
+			return
+		}
+	}()
+
+	vd.mxBlocks.Lock()
+	if len(vd.blocks) < 2 {
+		t.Fatalf("no blocks was validated")
+	}
+	if leadingZeros(vd.blocks[vd.lastBlockNum].BlockHash) != BlockDifficulty {
+		t.Fatalf("wrong block hash difficulty")
+	}
 }
 
-func TestValidator_VerifyBlockWithCoinbaseTransaction(t *testing.T) {
-	// vd := NewValidator()
+func TestValidator_RewardAfterBlockReturns(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
+
+	vd, _ := NewValidator(&gen)
+	nd, _ := NewNode(&gen)
+	_ = vd.AddTransaction(msg.Transaction{
+		From:   "two",
+		To:     "one",
+		Amount: 10,
+		Fee:    20,
+	})
+
+	block, err := vd.newBlock()
+	if err != nil {
+		t.Errorf("new block error: %v", err)
+	}
+
+	v, _ := vd.GetBalance(vd.NodeAddress())
+	if v != 0 {
+		t.Errorf("early reward: get=%v, want=%v", v, 0)
+	}
+
+	err = vd.AddPeer(nd)
+	if err != nil {
+		t.Fatalf("add peer error: %v", err)
+	}
+	vd.Broadcast(context.Background(), msg.Message{
+		From: vd.NodeAddress(),
+		Data: block,
+	})
+
+	time.Sleep(time.Millisecond * 1)
+
+	if len(vd.blocks) != 2 {
+		t.Fatalf("block was not received: len=%v, want=%v", len(vd.blocks), 2)
+	}
+	v, _ = vd.GetBalance(vd.NodeAddress())
+	if v != BlockReward+20 {
+		t.Errorf("wrong balance: get=%v, want=%v", v, BlockReward+20)
+	}
 }
 
-/* --- GOOD --------------------------------------------------------------------------------------------------------- */
+func TestValidator_CoinbaseTransactionCorrect(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
 
-func TestValidator_leadingZeros(t *testing.T) {
+	vd, _ := NewValidator(&gen)
+	_ = vd.AddTransaction(msg.Transaction{
+		From:   "two",
+		To:     "one",
+		Amount: 10,
+		Fee:    20,
+	})
+
+	block, err := vd.newBlock()
+	if err != nil {
+		t.Errorf("new block error: %v", err)
+	}
+
+	if len(block.Transactions) != 2 {
+		t.Fatalf("wrong transactions count: get=%v want=%v", len(block.Transactions), 2)
+	}
+
+	coinbase := block.Transactions[0]
+	if coinbase.From != "" {
+		t.Fatalf("coinbase can't have sender: From='%v'", coinbase.From)
+	}
+	if coinbase.To != vd.NodeAddress() {
+		t.Fatalf("coinbase wrong receiver address: To='%v'", coinbase.To)
+	}
+	if coinbase.Amount != BlockReward {
+		t.Fatalf("coinbase wrong amount: Amount='%v' want=%v", coinbase.Amount, BlockReward)
+	}
+	if coinbase.Fee != 0 {
+		t.Fatalf("coinbase wrong fee amount: Feee='%v' want=%v", coinbase.Fee, 0)
+	}
+}
+
+func TestValidator_LeadingZeros(t *testing.T) {
 
 	type test struct {
 		hash      string

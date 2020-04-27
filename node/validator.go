@@ -136,10 +136,6 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	block.Signature = ed25519.Sign(c.key, bts)
 	block.PubKey = c.NodeKey().(ed25519.PublicKey)
 
-	// apply additional fields
-	c.blocks[c.lastBlockNum].StateHash = block.StateHash
-	c.blocks[c.lastBlockNum].BlockHash = block.BlockHash
-	c.blocks[c.lastBlockNum].Signature = block.Signature
 	// return new block
 	return block, nil
 }

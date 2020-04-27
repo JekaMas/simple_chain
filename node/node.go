@@ -133,7 +133,7 @@ func (c *Node) Broadcast(ctx context.Context, msg msg.Message) {
 	defer c.mxPeers.Unlock()
 
 	for _, v := range c.peers {
-		if msg.From != v.Address && v.Address != c.address {
+		if v.Address != c.address {
 			c.SendMessageTo(v, ctx, msg)
 		}
 	}
