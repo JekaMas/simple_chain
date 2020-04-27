@@ -40,8 +40,7 @@ type Node struct {
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
-	state      storage.Storage
-	validators []crypto.PublicKey
+	state storage.Storage
 
 	mxPeers  *sync.Mutex
 	mxBlocks *sync.Mutex
@@ -61,10 +60,10 @@ func NewNode(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Node, error) {
 		address:      address,
 		genesis:      genesis,
 		blocks:       []msg.Block{genesis.ToBlock()},
+		blockPool:    pool.NewBlockPool(),
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
-		validators:   genesis.Validators,
 
 		mxBlocks: &(sync.Mutex{}),
 		mxPeers:  &(sync.Mutex{}),
@@ -113,12 +112,6 @@ func (c *Node) AddPeer(peer Blockchain) error {
 
 	if _, ok := c.peers[remoteAddress]; ok {
 		return nil
-	}
-
-	if v, ok := peer.(*Validator); ok {
-		if !c.containsValidator(v) {
-			c.validators = append(c.validators, v.NodeKey())
-		}
 	}
 
 	out := make(chan msg.Message, MessagesBusLen)
@@ -378,6 +371,12 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
 
+	// reward transaction
+	coinbase := block.Transactions[0]
+	if coinbase.From != "" || coinbase.Amount != BlockReward {
+		return errors.New("wrong coinbase transaction")
+	}
+
 	validatorAddr, err := c.validatorAddr(block)
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
@@ -393,11 +392,6 @@ func (c *Node) verifyBlock(block msg.Block) error {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
 	}
-	// reward transaction
-	coinbase := block.Transactions[0]
-	if coinbase.From != "" || coinbase.To != validatorAddr || coinbase.Amount != BlockReward {
-		return errors.New("wrong coinbase transaction")
-	}
 
 	// verify state hash
 	stateHash, err := stateCopy.Hash()
@@ -408,13 +402,6 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return errors.New("state hash is incorrect")
 	}
 
-	// get validator public key
-	validatorNum := block.BlockNum % uint64(len(c.validators))
-	validatorKey, ok := c.validators[validatorNum].(ed25519.PublicKey)
-	if !ok {
-		return errors.New("can't convert public key to ed25519")
-	}
-
 	// check signature
 	sig := block.Signature
 	block.Signature = nil
@@ -422,7 +409,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
 	}
-	if !ed25519.Verify(validatorKey, bts, sig) {
+	if !ed25519.Verify(block.PubKey, bts, sig) {
 		return errors.New("block signature is incorrect")
 	}
 
@@ -442,6 +429,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
 	}
+
 	return nil
 }
 
@@ -458,23 +446,12 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 }
 
 func (c *Node) validatorAddr(b msg.Block) (string, error) {
-	if len(c.validators) == 0 {
-		return "", errors.New("no validators")
+	if len(b.Transactions) == 0 {
+		return "", errors.New("incorrect block")
 	}
 
-	validatorKey := c.validators[int(b.BlockNum%uint64(len(c.validators)))]
-	return PubKeyToAddress(validatorKey)
-}
-
-func (c *Node) containsValidator(v *Validator) bool {
-	for _, pubKey := range c.validators {
-		addr1, _ := PubKeyToAddress(pubKey)
-		addr2, _ := PubKeyToAddress(v.NodeKey())
-		if addr1 == addr2 {
-			return true
-		}
-	}
-	return false
+	coinbase := b.Transactions[0]
+	return coinbase.To, nil
 }
 
 func (c *Node) insertBlock(b msg.Block) error {

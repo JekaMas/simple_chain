@@ -2,6 +2,7 @@ package msg
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/gob"
 	"simple_chain/encode"
 )
@@ -15,6 +16,7 @@ type Block struct {
 	PrevBlockHash string
 	StateHash     string
 	Signature     []byte `json:"-"`
+	PubKey        ed25519.PublicKey
 }
 
 func (bl Block) Hash() (string, error) {

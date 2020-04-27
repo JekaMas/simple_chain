@@ -10,8 +10,8 @@ func TestBlock_HashSame(t *testing.T) {
 	tr1 := Transaction{"one", "two", 20, 30, []byte("abc"), []byte("cde")}
 	tr2 := Transaction{"thr", "two", 30, 40, []byte("bde"), []byte("fgh")}
 
-	block1 := Block{1, 20, []Transaction{tr1, tr2}, "abc", "abc", "abc", []byte("fgh")}
-	block2 := Block{1, 20, []Transaction{tr1, tr2}, "abc", "abc", "abc", []byte("fgh")}
+	block1 := Block{1, 20, 111, []Transaction{tr1, tr2}, "abc", "abc", "fgh", []byte("abba"), []byte("baa")}
+	block2 := Block{1, 20, 111, []Transaction{tr1, tr2}, "abc", "abc", "fgh", []byte("abba"), []byte("baa")}
 
 	hash1, err := block1.Hash()
 	if err != nil {

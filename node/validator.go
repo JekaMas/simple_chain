@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"simple_chain/genesis"
 	"simple_chain/msg"
+	"simple_chain/pool"
 	"simple_chain/storage"
 	"time"
 )
@@ -17,10 +18,8 @@ const (
 )
 
 type Validator struct {
-	//embedded node
 	Node
-	//transaction hash - > transaction
-	transactionPool map[string]msg.Transaction
+	transactionPool pool.TransactionPool
 }
 
 func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator, error) {
@@ -33,7 +32,7 @@ func NewValidator(key ed25519.PrivateKey, genesis *genesis.Genesis) (*Validator,
 	// return new validator
 	return &Validator{
 		Node:            *nd,
-		transactionPool: make(map[string]msg.Transaction),
+		transactionPool: pool.NewTransactionPool(),
 	}, nil
 }
 
@@ -49,12 +48,7 @@ func NewValidatorFromGenesis(genesis *genesis.Genesis) (*Validator, error) {
 
 // AddTransaction - add to transaction pool (for validator)
 func (c *Validator) AddTransaction(tr msg.Transaction) error {
-	hash, err := tr.Hash()
-	if err != nil {
-		return err
-	}
-	c.transactionPool[hash] = tr
-	return nil
+	return c.transactionPool.Insert(tr)
 }
 
 func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
@@ -69,23 +63,24 @@ func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer,
 			return fmt.Errorf("can't process transaction: %v", err)
 		}
 
-		delete(c.transactionPool, hash)
+		c.transactionPool.Delete(hash)
 	}
 	return nil
 }
 
 func (c *Validator) startValidating() {
 	ctx := context.Background()
-	//endless loop
 	for {
 		c.logger.Infof("%v validating block...", simplifyAddress(c.address))
-		//get new block
+
+		// validate new block
 		block, err := c.newBlock()
 		if err != nil {
 			// fixme panic
 			panic(err)
 		}
-		//send new block
+
+		// send new block
 		c.logger.Infof("%v generated new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
 		c.Broadcast(ctx, msg.Message{
 			From: c.address,
@@ -95,7 +90,7 @@ func (c *Validator) startValidating() {
 }
 
 func (c *Validator) newBlock() (msg.Block, error) {
-	txs := c.popTransactions(TransactionsPerBlock)
+	txs := c.transactionPool.Pop(TransactionsPerBlock)
 	err := verifyTransactions(c.state.Copy(), c.NodeAddress(), txs)
 	if err != nil {
 		return msg.Block{}, fmt.Errorf("can't varify transactions: %v", err)
@@ -114,6 +109,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		StateHash:     "",  // fill later
 		BlockHash:     "",  // fill later
 		Signature:     nil, // fill later
+		PubKey:        nil, // fill later
 	}
 
 	// apply block to state copy
@@ -147,6 +143,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		return msg.Block{}, err
 	}
 	block.Signature = ed25519.Sign(c.key, bts)
+	block.PubKey = c.NodeKey().(ed25519.PublicKey)
 
 	// apply additional fields
 	c.blocks[c.lastBlockNum].StateHash = block.StateHash
@@ -170,21 +167,6 @@ func verifyTransactions(stateCopy storage.Storage, validatorAddress string, txs 
 		}
 	}
 	return nil
-}
-
-// popTransactions - remove first 0-n transactions from transaction pool
-func (c *Validator) popTransactions(maxCount uint64) []msg.Transaction {
-	txs := make([]msg.Transaction, 0, maxCount)
-	i := uint64(0)
-
-	for hash, tr := range c.transactionPool {
-		if i++; i > maxCount {
-			break
-		}
-		delete(c.transactionPool, hash) // fixme hmm, seems not safe...
-		txs = append(txs, tr)
-	}
-	return txs
 }
 
 func (c *Validator) validateBlockHash(block *msg.Block) (string, error) {

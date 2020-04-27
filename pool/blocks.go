@@ -7,6 +7,10 @@ import (
 
 type BlockPool map[uint64][]msg.Block
 
+func NewBlockPool() BlockPool {
+	return make(map[uint64][]msg.Block)
+}
+
 func (p BlockPool) AddBlock(b msg.Block) error {
 	pool := p[b.BlockNum]
 	pool = append(pool, b)
