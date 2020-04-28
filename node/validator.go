@@ -48,12 +48,7 @@ func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer,
 	}
 
 	for _, tr := range block.Transactions {
-		hash, err := tr.Hash()
-		if err != nil {
-			return fmt.Errorf("can't process transaction: %v", err)
-		}
-
-		c.transactionPool.Delete(hash)
+		c.transactionPool.Delete(tr)
 	}
 	return nil
 }
@@ -81,7 +76,7 @@ func (c *Validator) startValidating() {
 }
 
 func (c *Validator) newBlock() (msg.Block, error) {
-	txs := c.transactionPool.Pop(TransactionsPerBlock)
+	txs := c.transactionPool.Peek(TransactionsPerBlock)
 	err := verifyTransactions(c.state.Copy(), c.NodeAddress(), txs)
 	if err != nil {
 		return msg.Block{}, fmt.Errorf("can't varify transactions: %v", err)
@@ -106,10 +101,17 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	// apply block to state copy
 	stateCopy := c.state.Copy()
 	for _, tr := range block.Transactions[1:] {
-		err := applyTransaction(stateCopy, c.NodeAddress(), tr)
+		err := verifyTransaction(stateCopy, tr)
+		// skip incorrect transactions
+		if err != nil {
+			continue
+		}
+		// if all correct - apply and delete from pool
+		err = applyTransaction(stateCopy, c.NodeAddress(), tr)
 		if err != nil {
 			return msg.Block{}, err
 		}
+		c.transactionPool.Delete(tr)
 	}
 	err = applyCoinbaseTransaction(stateCopy, block.Transactions[0])
 	if err != nil {

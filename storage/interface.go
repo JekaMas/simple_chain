@@ -15,6 +15,9 @@ type Storage interface {
 	Add(key string, amount uint64) error
 	Hash() (string, error)
 
+	// Revert operations
+	Revert(trCount int) error
+
 	// Copy
 	Copy() Storage
 

@@ -8,8 +8,15 @@ import (
 	"sync"
 )
 
+type operation struct {
+	name   string
+	key    string
+	amount uint64
+}
+
 type MapStorage struct {
 	Alloc   map[string]uint64
+	History []operation
 	mxAlloc sync.Mutex
 }
 
@@ -28,16 +35,6 @@ func FromGenesis(genesis *genesis.Genesis) *MapStorage {
 	}
 
 	return storage
-}
-
-func (m *MapStorage) Put(key string, data uint64) error {
-	_, ok := m.Alloc[key]
-	if ok {
-		return fmt.Errorf("account '%v' already exists", key)
-	}
-
-	m.Alloc[key] = data
-	return nil
 }
 
 func (m *MapStorage) Get(key string) (uint64, error) {
@@ -61,6 +58,17 @@ func (m *MapStorage) Copy() Storage {
 	}
 }
 
+func (m *MapStorage) Put(key string, data uint64) error {
+	_, ok := m.Alloc[key]
+	if ok {
+		return fmt.Errorf("account '%v' already exists", key)
+	}
+
+	m.Alloc[key] = data
+	m.History = append(m.History, operation{"Put", key, data})
+	return nil
+}
+
 func (m *MapStorage) PutMap(alloc map[string]uint64) error {
 	for addr, fund := range alloc {
 		if err := m.Put(addr, fund); err != nil {
@@ -72,7 +80,9 @@ func (m *MapStorage) PutMap(alloc map[string]uint64) error {
 
 func (m *MapStorage) Add(key string, amount uint64) error {
 	fund, _ := m.Alloc[key]
+
 	m.Alloc[key] = fund + amount
+	m.History = append(m.History, operation{"Add", key, amount})
 	return nil
 }
 
@@ -84,7 +94,32 @@ func (m *MapStorage) Sub(key string, amount uint64) error {
 	if fund < amount {
 		return errors.New("insufficient funds")
 	}
+
 	m.Alloc[key] = fund - amount
+	m.History = append(m.History, operation{"Sub", key, amount})
+	return nil
+}
+
+func (m *MapStorage) Revert(trCount int) error {
+	if len(m.History) < trCount {
+		return errors.New("too many operations to revert")
+	}
+
+	for i := 0; i < trCount; i++ {
+		// pop
+		op := m.History[len(m.History)-1]
+		m.History = m.History[:len(m.History)-1]
+		// revert
+		switch op.name {
+		case "Put":
+			delete(m.Alloc, op.key)
+		case "Add":
+			m.Alloc[op.key] -= op.amount
+		case "Sub":
+			m.Alloc[op.key] += op.amount
+		}
+	}
+
 	return nil
 }
 
