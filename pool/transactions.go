@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	MaxLifeTime = 1 * 60 * 1000 // ms
+	MaxLifeTime = int64(3 * time.Minute)
 )
 
 type pooledTransaction struct {

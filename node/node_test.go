@@ -1,8 +1,7 @@
-// +build !race
-
 package node
 
 import (
+	"context"
 	"reflect"
 	"simple_chain/genesis"
 	"simple_chain/msg"
@@ -153,6 +152,21 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	if !reflect.DeepEqual(nd1.state, nd2.state) {
 		t.Fatalf("wrong synced state")
 	}
+}
+
+func TestNodesSyncBlockStopBroadcasting(t *testing.T) {
+	gen := genesis.New()
+	nd, _ := NewNode(&gen)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	peer := connectedPeer{
+		Address: "abc",
+		In:      make(chan msg.Message, MessagesBusLen),
+		Out:     make(chan msg.Message, MessagesBusLen),
+		cancel:  cancel,
+	}
+
+	nd.peerLoop(ctx, peer)
 }
 
 func TestNodeInsertBlockSuccess(t *testing.T) {

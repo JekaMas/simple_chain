@@ -274,7 +274,7 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 
 	// if the block is out of turn
 	if block.BlockNum > c.lastBlockNum+1 {
-		return c.blockPool.AddBlock(block)
+		return c.blockPool.Insert(block)
 	}
 
 	// process block from message
@@ -284,7 +284,7 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 
 	// check block pool for blocks
 	if c.blockPool.HasBlockNum(c.lastBlockNum + 1) {
-		block, err := c.blockPool.PopBlock(c.lastBlockNum + 1)
+		block, err := c.blockPool.Pop(c.lastBlockNum + 1)
 		if err != nil {
 			return fmt.Errorf("can't process block pool: %v", err)
 		}
