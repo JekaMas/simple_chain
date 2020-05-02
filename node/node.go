@@ -14,11 +14,13 @@ import (
 	"simple_chain/pool"
 	"simple_chain/storage"
 	"sync"
+	"time"
 )
 
 const (
-	MessagesBusLen = 100
-	TransactionFee = 10
+	MessagesBusLen                = 100
+	TransactionFee                = 10
+	TransactionSuccessBlocksDelta = 6
 )
 
 type connectedPeer struct {
@@ -31,7 +33,7 @@ type connectedPeer struct {
 type Node struct {
 	key          ed25519.PrivateKey
 	address      string
-	genesis      *genesis.Genesis
+	genesis      genesis.Genesis
 	lastBlockNum uint64
 
 	//chain
@@ -47,7 +49,7 @@ type Node struct {
 	logger   logger.Logger
 }
 
-func NewNode(genesis *genesis.Genesis) (*Node, error) {
+func NewNode(genesis genesis.Genesis) (*Node, error) {
 	_, key, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
@@ -55,7 +57,7 @@ func NewNode(genesis *genesis.Genesis) (*Node, error) {
 	return NewNodeWithKey(genesis, key)
 }
 
-func NewNodeWithKey(genesis *genesis.Genesis, key ed25519.PrivateKey) (*Node, error) {
+func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, error) {
 	address, err := PubKeyToAddress(key.Public())
 	if err != nil {
 		return nil, err
@@ -173,7 +175,7 @@ func (c *Node) NodeInfo() msg.NodeInfoResp {
 		NodeName:        c.address,
 		BlockNum:        c.lastBlockNum,
 		LastBlockHash:   lastBlock.BlockHash,
-		TotalDifficulty: 1, // todo totalDifficult
+		TotalDifficulty: c.totalDifficulty(),
 	}
 }
 
@@ -200,8 +202,11 @@ func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 }
 
 func (c *Node) SendMessageTo(cp connectedPeer, ctx context.Context, msg msg.Message) {
-	//todo timeout using context + done check
-	cp.Out <- msg
+	select {
+	case cp.Out <- msg:
+	case <-ctx.Done():
+	case <-time.After(time.Second * 3):
+	}
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
@@ -230,7 +235,7 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 	switch m := message.Data.(type) {
 	case msg.Transaction:
 		return c.processTransaction(peer, m)
-	case msg.Block:
+	case msg.BlockMessage:
 		return c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
 		return c.processBlockRequest(ctx, peer, m)
@@ -268,27 +273,35 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 }
 
 // processBlock - received block
-func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
+func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, msg msg.BlockMessage) error {
 	c.logger.Infof("%v receive block [%v] from %v",
-		simplifyAddress(c.address), simplifyAddress(block.BlockHash), simplifyAddress(peer.Address))
+		simplifyAddress(c.address), simplifyAddress(msg.BlockHash), simplifyAddress(peer.Address))
 
-	// if the block is out of turn
-	if block.BlockNum > c.lastBlockNum+1 {
-		return c.blockPool.Insert(block)
-	}
+	if msg.TotalDifficulty > c.totalDifficulty() {
+		// parentId, err := c.getParentBlockID(msg.PrevBlockHash)
+		//if err != nil {
+		//	c.logger.Errorf("can't verify block with greater td: %v", err)
+		//	return c.blockPool.Insert(msg.Block)
+		//}
 
-	// process block from message
-	if err := c.processBlock(block); err != nil {
-		return fmt.Errorf("can't process message: %v", err)
-	}
-
-	// check block pool for blocks
-	if c.blockPool.HasBlockNum(c.lastBlockNum + 1) {
-		block, err := c.blockPool.Pop(c.lastBlockNum + 1)
-		if err != nil {
-			return fmt.Errorf("can't process block pool: %v", err)
+		// if verify block
+		// revert to parent hash and insert block
+	} else if msg.BlockNum > c.lastBlockNum+1 {
+		// if the block is out of turn
+		return c.blockPool.Insert(msg.Block)
+	} else {
+		// process block from message
+		if err := c.processBlock(msg.Block); err != nil {
+			return fmt.Errorf("can't process message: %v", err)
 		}
-		return c.processBlock(block)
+		// check block pool for blocks
+		if c.blockPool.HasBlockNum(c.lastBlockNum + 1) {
+			block, err := c.blockPool.Pop(c.lastBlockNum + 1)
+			if err != nil {
+				return fmt.Errorf("can't process block pool: %v", err)
+			}
+			return c.processBlock(block)
+		}
 	}
 
 	return nil
@@ -314,7 +327,10 @@ func (c *Node) processBlockRequest(ctx context.Context, peer connectedPeer, req 
 		for id := req.BlockNumFrom; id <= req.BlockNumTo; id++ {
 			c.logger.Infof("%v send block [%v] to %v",
 				simplifyAddress(c.address), simplifyAddress(c.blocks[id].BlockHash), simplifyAddress(peer.Address))
-			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
+			c.SendTo(peer, ctx, msg.BlockMessage{
+				Block:           c.GetBlockByNumber(id),
+				TotalDifficulty: c.totalDifficulty(),
+			})
 		}
 	}
 	return nil
@@ -325,7 +341,15 @@ func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.
 	c.mxBlocks.Lock()
 	defer c.mxBlocks.Unlock()
 	// blocks request
-	if c.lastBlockNum < res.BlockNum {
+	if res.TotalDifficulty > c.totalDifficulty() {
+		c.logger.Infof("%v connect to %v totalDifficulty is greater: need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
+		c.SendTo(peer, ctx, msg.BlocksRequest{
+			From:         res.NodeName,
+			To:           c.NodeAddress(),
+			BlockNumFrom: 0,
+			BlockNumTo:   res.BlockNum,
+		})
+	} else if c.lastBlockNum < res.BlockNum {
 		c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
 		c.SendTo(peer, ctx, msg.BlocksRequest{
 			From:         res.NodeName,
@@ -485,6 +509,31 @@ func (c *Node) insertBlock(b msg.Block) error {
 	c.blocks = append(c.blocks, b)
 	c.lastBlockNum += 1
 	return nil
+}
+
+func (c *Node) IsTransactionSuccess(tr msg.Transaction) bool {
+	hash, err := tr.Hash()
+	if err != nil {
+		return false
+	}
+
+	for _, block := range c.blocks {
+		for _, blockTr := range block.Transactions {
+			blockTrHash, err := blockTr.Hash()
+			if err != nil {
+				continue
+			}
+			if hash == blockTrHash {
+				return c.lastBlockNum-block.BlockNum >= TransactionSuccessBlocksDelta
+			}
+		}
+	}
+
+	return false
+}
+
+func (c *Node) totalDifficulty() uint64 {
+	return uint64(len(c.blocks))
 }
 
 func applyCoinbaseTransaction(state storage.Storage, tr msg.Transaction) error {

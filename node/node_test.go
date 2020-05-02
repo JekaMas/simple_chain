@@ -112,63 +112,6 @@ import (
 
 /* --- GOOD --------------------------------------------------------------------------------------------------------- */
 
-func TestNodesSyncTwoNodes(t *testing.T) {
-	gen := genesis.New()
-	gen.Alloc = map[string]uint64{
-		"one": 200,
-		"two": 50,
-	}
-
-	nd1, _ := NewNode(&gen)
-	nd2, _ := NewNode(&gen)
-
-	vd, _ := NewValidator(&gen)
-	err := vd.AddTransaction(msg.Transaction{
-		From:   "one",
-		To:     "two",
-		Amount: 100,
-		Fee:    10,
-	})
-	if err != nil {
-		t.Errorf("add transaction error: %v", err)
-	}
-
-	block, _ := vd.newBlock()
-
-	if err := nd1.insertBlock(block); err != nil {
-		t.Fatalf("insert block err: %v", err)
-	}
-
-	if err := nd1.AddPeer(nd2); err != nil {
-		t.Fatalf("add peer err: %v", err)
-	}
-
-	time.Sleep(1 * time.Millisecond)
-
-	if len(nd2.blocks) != 2 {
-		t.Fatalf("no block was synced")
-	}
-
-	if !reflect.DeepEqual(nd1.state, nd2.state) {
-		t.Fatalf("wrong synced state")
-	}
-}
-
-func TestNodesSyncBlockStopBroadcasting(t *testing.T) {
-	gen := genesis.New()
-	nd, _ := NewNode(&gen)
-	ctx, cancel := context.WithCancel(context.Background())
-
-	peer := connectedPeer{
-		Address: "abc",
-		In:      make(chan msg.Message, MessagesBusLen),
-		Out:     make(chan msg.Message, MessagesBusLen),
-		cancel:  cancel,
-	}
-
-	nd.peerLoop(ctx, peer)
-}
-
 func TestNodeInsertBlockSuccess(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
@@ -177,8 +120,8 @@ func TestNodeInsertBlockSuccess(t *testing.T) {
 		"three": 40,
 	}
 
-	vd, _ := NewValidator(&gen)
-	nd, _ := NewNode(&gen)
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
 	_ = vd.AddTransaction(msg.Transaction{
 		From:   "one",
 		To:     "two",
@@ -216,8 +159,8 @@ func TestApplyTransactionSuccess(t *testing.T) {
 		"three": 40,
 	}
 
-	nd, _ := NewNode(&gen)
-	vd, _ := NewNode(&gen)
+	nd, _ := NewNode(gen)
+	vd, _ := NewNode(gen)
 
 	tr := msg.Transaction{
 		From:   "one",
@@ -251,8 +194,8 @@ func TestVerifyBlockSuccess(t *testing.T) {
 		"three": 40,
 	}
 
-	vd, _ := NewValidator(&gen)
-	nd, _ := NewNode(&gen)
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
 
 	err := vd.AddTransaction(msg.Transaction{
 		From:   "two",
@@ -282,8 +225,8 @@ func TestVerifyTransactionSuccess(t *testing.T) {
 		"three": 40,
 	}
 
-	nd1, _ := NewNode(&gen)
-	nd2, _ := NewNode(&gen)
+	nd1, _ := NewNode(gen)
+	nd2, _ := NewNode(gen)
 
 	tr := msg.Transaction{
 		From:   "one",
@@ -304,8 +247,8 @@ func TestVerifyTransactionSuccess(t *testing.T) {
 
 func TestVerifySameBlockFailure(t *testing.T) {
 	gen := genesis.New()
-	vd, _ := NewValidator(&gen)
-	nd, _ := NewNode(&gen)
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
 
 	block, _ := vd.newBlock()
 
@@ -319,5 +262,183 @@ func TestVerifySameBlockFailure(t *testing.T) {
 		t.Error("same block verified")
 	} else {
 		t.Log(err)
+	}
+}
+
+func TestNodesSyncBlockStopBroadcasting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	gen := genesis.New()
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
+
+	in := make(chan msg.Message, MessagesBusLen)
+	out := make(chan msg.Message, MessagesBusLen)
+
+	block, _ := vd.newBlock()
+
+	peer := connectedPeer{
+		Address: "abc",
+		In:      in,
+		Out:     out,
+		cancel:  cancel,
+	}
+
+	go nd.peerLoop(ctx, peer)
+
+	// broadcast after receiving block
+	in <- msg.Message{From: "abc", Data: block}
+	<-out
+
+	// send same block
+	in <- msg.Message{From: "abc", Data: block}
+	select {
+	case b := <-out:
+		if reflect.DeepEqual(b, block) {
+			t.Fatalf("endless broadcasting")
+		}
+		t.Fatalf("received phantom message: %v", b)
+	case <-time.After(time.Millisecond):
+		// no messages - test passed
+		return
+	}
+}
+
+func TestNode_TotalDifficultyValue(t *testing.T) {
+	gen := genesis.New()
+	nd1, _ := NewNode(gen)
+	nd2, _ := NewNode(gen)
+
+	// chain 1
+	vd1, _ := NewValidator(gen)
+	for i := 0; i < 3; i++ {
+		block, _ := vd1.newBlock()
+		_ = nd1.insertBlock(block)
+	}
+
+	if nd1.totalDifficulty() != 4 {
+		t.Fatalf("wrong total difficulty: get=%v, want=%v", nd1.totalDifficulty(), 4)
+	}
+
+	// chain 2
+	vd2, _ := NewValidator(gen)
+	for i := 0; i < 5; i++ {
+		block, _ := vd2.newBlock()
+		_ = nd2.insertBlock(block)
+	}
+
+	if nd2.totalDifficulty() != 6 {
+		t.Fatalf("wrong total difficulty: get=%v, want=%v", nd2.totalDifficulty(), 6)
+	}
+}
+
+func TestNode_IsTransactionSuccess(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one":   20,
+		"two":   30,
+		"three": 40,
+	}
+
+	nd, _ := NewNode(gen)
+	vd, _ := NewValidator(gen)
+
+	tr := msg.Transaction{
+		From:   "two",
+		To:     "one",
+		Amount: 10,
+		Fee:    1,
+	}
+	_ = vd.AddTransaction(tr)
+
+	block, err := vd.newBlock()
+	if err != nil {
+		t.Fatalf("new block error: %v", err)
+	}
+	_ = nd.insertBlock(block)
+
+	if nd.IsTransactionSuccess(tr) {
+		t.Fatalf("early transaction success")
+	}
+
+	// six more blocks
+	for i := 0; i < 6; i++ {
+		block, _ := vd.newBlock()
+		_ = nd.insertBlock(block)
+	}
+
+	if !nd.IsTransactionSuccess(tr) {
+		t.Fatalf("transaction must be success")
+	}
+}
+
+func TestNodesSyncTwoNodes(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one": 200,
+		"two": 50,
+	}
+
+	nd1, _ := NewNode(gen)
+	nd2, _ := NewNode(gen)
+
+	vd, _ := NewValidator(gen)
+	err := vd.AddTransaction(msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 100,
+		Fee:    10,
+	})
+	if err != nil {
+		t.Errorf("add transaction error: %v", err)
+	}
+
+	block, _ := vd.newBlock()
+
+	if err := nd1.insertBlock(block); err != nil {
+		t.Fatalf("insert block err: %v", err)
+	}
+
+	if err := nd1.AddPeer(nd2); err != nil {
+		t.Fatalf("add peer err: %v", err)
+	}
+
+	time.Sleep(1 * time.Millisecond)
+
+	if len(nd2.blocks) != 2 {
+		t.Fatalf("no block was synced")
+	}
+
+	if !reflect.DeepEqual(nd1.state, nd2.state) {
+		t.Fatalf("wrong synced state")
+	}
+}
+
+func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
+	gen := genesis.New()
+	nd1, _ := NewNode(gen)
+	nd2, _ := NewNode(gen)
+
+	// chain 1
+	vd1, _ := NewValidator(gen)
+	for i := 0; i < 3; i++ {
+		block, _ := vd1.newBlock()
+		_ = nd1.insertBlock(block)
+	}
+	// chain 2
+	vd2, _ := NewValidator(gen)
+	for i := 0; i < 5; i++ {
+		block, _ := vd2.newBlock()
+		_ = nd2.insertBlock(block)
+	}
+
+	_ = nd1.AddPeer(nd2)
+	time.Sleep(time.Millisecond * 100)
+
+	if nd1.totalDifficulty() != 6 {
+		t.Errorf("wrong total difficulty: get=%v, want=%v", nd1.totalDifficulty(), 6)
+	}
+	if !reflect.DeepEqual(nd1.blocks, nd2.blocks) {
+		t.Fatalf("nodes not synchronized")
 	}
 }

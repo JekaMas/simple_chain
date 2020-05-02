@@ -22,7 +22,7 @@ type Validator struct {
 	transactionPool pool.TransactionPool
 }
 
-func NewValidator(genesis *genesis.Genesis) (*Validator, error) {
+func NewValidator(genesis genesis.Genesis) (*Validator, error) {
 	// init node
 	nd, err := NewNode(genesis)
 	if err != nil {
@@ -41,13 +41,13 @@ func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	return c.transactionPool.Insert(tr)
 }
 
-func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
-	err := c.Node.processBlockMessage(ctx, peer, block)
+func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, msg msg.BlockMessage) error {
+	err := c.Node.processBlockMessage(ctx, peer, msg)
 	if err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
 
-	for _, tr := range block.Transactions {
+	for _, tr := range msg.Transactions {
 		c.transactionPool.Delete(tr)
 	}
 	return nil
@@ -70,7 +70,10 @@ func (c *Validator) startValidating() {
 		c.logger.Infof("%v generated new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
 		c.Broadcast(ctx, msg.Message{
 			From: c.address,
-			Data: block,
+			Data: msg.BlockMessage{
+				Block:           block,
+				TotalDifficulty: c.totalDifficulty(),
+			},
 		})
 	}
 }

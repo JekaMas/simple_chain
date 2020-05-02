@@ -26,7 +26,7 @@ func NewMap() *MapStorage {
 	}
 }
 
-func FromGenesis(genesis *genesis.Genesis) *MapStorage {
+func FromGenesis(genesis genesis.Genesis) *MapStorage {
 	storage := NewMap()
 	block := genesis.ToBlock()
 

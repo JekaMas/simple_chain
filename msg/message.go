@@ -21,3 +21,8 @@ type BlocksRequest struct {
 	BlockNumFrom uint64
 	BlockNumTo   uint64
 }
+
+type BlockMessage struct {
+	Block
+	TotalDifficulty uint64
+}

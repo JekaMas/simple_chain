@@ -15,8 +15,8 @@ func TestValidator_Mining(t *testing.T) {
 		"two": 30,
 	}
 
-	vd, _ := NewValidator(&gen)
-	nd, _ := NewNode(&gen)
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
 	_ = vd.AddTransaction(msg.Transaction{
 		From:   "two",
 		To:     "one",
@@ -54,8 +54,8 @@ func TestValidator_RewardAfterBlockReturns(t *testing.T) {
 		"three": 40,
 	}
 
-	vd, _ := NewValidator(&gen)
-	nd, _ := NewNode(&gen)
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
 	_ = vd.AddTransaction(msg.Transaction{
 		From:   "two",
 		To:     "one",
@@ -101,7 +101,7 @@ func TestValidator_CoinbaseTransactionCorrect(t *testing.T) {
 		"three": 40,
 	}
 
-	vd, _ := NewValidator(&gen)
+	vd, _ := NewValidator(gen)
 	_ = vd.AddTransaction(msg.Transaction{
 		From:   "two",
 		To:     "one",
