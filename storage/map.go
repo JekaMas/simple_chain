@@ -83,15 +83,6 @@ func (m *MapStorage) Put(key string, data uint64) error {
 	return nil
 }
 
-func (m *MapStorage) PutMap(alloc map[string]uint64) error {
-	for addr, fund := range alloc {
-		if err := m.Put(addr, fund); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (m *MapStorage) Add(key string, amount uint64) error {
 	fund, ok := m.Alloc[key]
 	if !ok {
@@ -123,18 +114,19 @@ func (m *MapStorage) PutBlockToHistory(num uint64) {
 
 func (m *MapStorage) RevertBlock() {
 	for {
-		op := m.revert()
+		op := m.revertOperation()
 		if op.name == "Block" {
 			return
 		}
 	}
 }
 
-func (m *MapStorage) revert() operation {
+// revertOperation - delete and return one operation from history
+func (m *MapStorage) revertOperation() operation {
 	// pop
 	op := m.History[len(m.History)-1]
 	m.History = m.History[:len(m.History)-1]
-	// revert
+	// revertOperation
 	switch op.name {
 	case "Put":
 		delete(m.Alloc, op.key)

@@ -6,7 +6,7 @@ import (
 )
 
 func TestHashAllocSame(t *testing.T) {
-	// todo can't test with - can't declare map in some order
+	// todo can't test it - can't declare map in some order
 	alloc1 := map[string]uint64{
 		"one":   10,
 		"two":   20,
