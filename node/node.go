@@ -22,7 +22,7 @@ const (
 	TransactionFee                = 10
 	TransactionSuccessBlocksDelta = 6
 	MessageSendTimeout            = time.Second * 3
-	SimplifiedAddressLen          = BlockDifficulty + 1
+	SimplifiedAddressLen          = BlockDifficulty + 2
 )
 
 type connectedPeer struct {
@@ -253,9 +253,9 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 	case msg.Block:
 		return !c.hasBlock(m), c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
-		return m.To == c.NodeAddress(), c.processBlocksRequest(ctx, peer, m)
+		return m.To != c.NodeAddress(), c.processBlocksRequest(ctx, peer, m)
 	case msg.BlocksResponse:
-		return m.To == c.NodeAddress(), c.processBlocksResponse(ctx, peer, m)
+		return m.To != c.NodeAddress(), c.processBlocksResponse(ctx, peer, m)
 	case msg.NodeInfoResp:
 		return false, c.processNodeInfo(ctx, peer, m)
 	}
@@ -346,7 +346,8 @@ func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m 
 
 // send blocks to peer that requested
 func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req msg.BlocksRequest) error {
-	c.logger.Debugf("%v blocks request from %v", simplifyAddress(c.address), simplifyAddress(peer.Address))
+	c.logger.Debugf("%v blocks request from %v, from block [%v]",
+		simplifyAddress(c.address), simplifyAddress(peer.Address), simplifyAddress(req.LastBlockHash))
 
 	if c.NodeAddress() == req.To {
 		fromBlock, err := c.GetBlockByHash(req.LastBlockHash)
@@ -514,10 +515,12 @@ func (c *Node) insertBlock(b msg.Block) error {
 
 	c.state.PutBlockToHistory(b.BlockNum)
 
-	for _, tr := range b.Transactions[1:] {
-		err := applyTransaction(c.state, validatorAddr, tr)
-		if err != nil {
-			return err
+	if len(b.Transactions) > 1 {
+		for _, tr := range b.Transactions[1:] {
+			err := applyTransaction(c.state, validatorAddr, tr)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -561,12 +564,13 @@ func (c *Node) lastBlockHash() string {
 	defer c.mxBlocks.Unlock()
 
 	lastBlock := c.blocks[len(c.blocks)-1]
-	// fixme unnecessary error
-	hash, _ := lastBlock.Hash()
-	return hash
+	return lastBlock.BlockHash
 }
 
 func (c *Node) revertLastBlock() error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	if len(c.blocks) == 0 {
 		return errors.New("nothing to revert")
 	}
@@ -600,7 +604,7 @@ func applyCoinbaseTransaction(state storage.Storage, tr msg.Transaction) error {
 	state.Lock()
 	defer state.Unlock()
 
-	err := state.Add(tr.To, tr.Amount)
+	err := state.PutOrAdd(tr.To, tr.Amount)
 	if err != nil {
 		return err
 	}

@@ -89,7 +89,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,
 		Nonce:         0,
-		Timestamp:     time.Now().Unix(),
+		Timestamp:     time.Now().UnixNano(),
 		Transactions:  txs,
 		PrevBlockHash: prevBlockHash,
 		StateHash:     "",  // fill later

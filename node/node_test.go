@@ -433,6 +433,8 @@ func TestNode_revertBlock(t *testing.T) {
 	stateBefore := nd.state.Copy()
 
 	_ = nd.insertBlock(block)
+	insertedBlockHash := nd.lastBlockHash()
+
 	if reflect.DeepEqual(stateBefore, nd.state) {
 		t.Fatalf("state was not changed: check insert block function")
 	}
@@ -441,7 +443,11 @@ func TestNode_revertBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error while reverting last block: %v", err)
 	}
+	revertedBlockHash := nd.lastBlockHash()
 
+	if insertedBlockHash == revertedBlockHash {
+		t.Fatalf("same hashes for inserted and reverted blocks")
+	}
 	if nd.lastBlockNum != 0 {
 		t.Fatalf("last block num was not changed")
 	}
@@ -458,26 +464,38 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	nd1, _ := NewNode(gen)
 	nd2, _ := NewNode(gen)
 
+	t.Logf("genesis block [%v]", simplifyAddress(gen.ToBlock().BlockHash))
+
 	// chain 1
 	vd1, _ := NewValidator(gen)
 	for i := 0; i < 3; i++ {
 		block, _ := vd1.newBlock()
+		_ = vd1.insertBlock(block)
 		_ = nd1.insertBlock(block)
+		t.Logf("nd1 insert block [%v]", simplifyAddress(block.BlockHash))
 	}
+
+	t.Logf("-->")
+
 	// chain 2
 	vd2, _ := NewValidator(gen)
 	for i := 0; i < 5; i++ {
 		block, _ := vd2.newBlock()
+		_ = vd2.insertBlock(block)
 		_ = nd2.insertBlock(block)
+		t.Logf("nd2 insert block [%v]", simplifyAddress(block.BlockHash))
 	}
 
 	_ = nd1.AddPeer(nd2)
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Millisecond * 100)
 
 	if nd1.totalDifficulty() != 6 {
 		t.Errorf("wrong total difficulty: get=%v, want=%v", nd1.totalDifficulty(), 6)
 	}
 	if !reflect.DeepEqual(nd1.blocks, nd2.blocks) {
 		t.Fatalf("nodes not synchronized")
+	}
+	if !reflect.DeepEqual(nd1.state, nd2.state) {
+		t.Fatalf("states are not equal")
 	}
 }
