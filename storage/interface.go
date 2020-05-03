@@ -16,7 +16,9 @@ type Storage interface {
 	Hash() (string, error)
 
 	// Revert operations
-	Revert(trCount int) error
+	PutBlockToHistory(num uint64)
+	RevertBlock()
+	revert() operation
 
 	// Copy
 	Copy() Storage

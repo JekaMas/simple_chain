@@ -100,27 +100,33 @@ func (m *MapStorage) Sub(key string, amount uint64) error {
 	return nil
 }
 
-func (m *MapStorage) Revert(trCount int) error {
-	if len(m.History) < trCount {
-		return errors.New("too many operations to revert")
-	}
+func (m *MapStorage) PutBlockToHistory(num uint64) {
+	m.History = append(m.History, operation{"Block", "", num})
+}
 
-	for i := 0; i < trCount; i++ {
-		// pop
-		op := m.History[len(m.History)-1]
-		m.History = m.History[:len(m.History)-1]
-		// revert
-		switch op.name {
-		case "Put":
-			delete(m.Alloc, op.key)
-		case "Add":
-			m.Alloc[op.key] -= op.amount
-		case "Sub":
-			m.Alloc[op.key] += op.amount
+func (m *MapStorage) RevertBlock() {
+	for {
+		op := m.revert()
+		if op.name == "Block" {
+			return
 		}
 	}
+}
 
-	return nil
+func (m *MapStorage) revert() operation {
+	// pop
+	op := m.History[len(m.History)-1]
+	m.History = m.History[:len(m.History)-1]
+	// revert
+	switch op.name {
+	case "Put":
+		delete(m.Alloc, op.key)
+	case "Add":
+		m.Alloc[op.key] -= op.amount
+	case "Sub":
+		m.Alloc[op.key] += op.amount
+	}
+	return op
 }
 
 func (m *MapStorage) Hash() (string, error) {

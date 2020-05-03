@@ -10,19 +10,18 @@ type Message struct {
 type NodeInfoResp struct {
 	NodeName        string
 	BlockNum        uint64
-	LastBlockHash   string
 	TotalDifficulty uint64
 }
 
 // Request for needed blocks
 type BlocksRequest struct {
-	From         string
-	To           string
-	BlockNumFrom uint64
-	BlockNumTo   uint64
+	To            string
+	LastBlockHash string
 }
 
-type BlockMessage struct {
-	Block
-	TotalDifficulty uint64
+// Response with error
+type BlocksResponse struct {
+	To        string
+	BlockHash string
+	Error     error
 }

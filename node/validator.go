@@ -41,13 +41,13 @@ func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	return c.transactionPool.Insert(tr)
 }
 
-func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, msg msg.BlockMessage) error {
-	err := c.Node.processBlockMessage(ctx, peer, msg)
+func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
+	err := c.Node.processBlockMessage(ctx, peer, block)
 	if err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
 
-	for _, tr := range msg.Transactions {
+	for _, tr := range block.Transactions {
 		c.transactionPool.Delete(tr)
 	}
 	return nil
@@ -70,10 +70,7 @@ func (c *Validator) startValidating() {
 		c.logger.Infof("%v generated new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
 		c.Broadcast(ctx, msg.Message{
 			From: c.address,
-			Data: msg.BlockMessage{
-				Block:           block,
-				TotalDifficulty: c.totalDifficulty(),
-			},
+			Data: block,
 		})
 	}
 }
