@@ -2,6 +2,7 @@ package pool
 
 import (
 	"simple_chain/msg"
+	"sync"
 	"testing"
 	"time"
 )
@@ -36,7 +37,7 @@ func TestTransactionPool_Pop(t *testing.T) {
 	}
 }
 
-func TestTransactionPool_LifeTime(t *testing.T) {
+func TestTransactionPool_lifeTime(t *testing.T) {
 
 	txPool := NewTransactionPool()
 	txPool.maxLifeTime = int64(time.Millisecond)
@@ -52,4 +53,31 @@ func TestTransactionPool_LifeTime(t *testing.T) {
 	if txs[0].Amount != 2 {
 		t.Fatalf("wrong transaction was received: amount get=%v, want=%v", txs[0].Amount, 2)
 	}
+}
+
+// run with -race
+func TestTransactionPool_Concurrency(t *testing.T) {
+
+	tp := NewTransactionPool()
+	wg := sync.WaitGroup{}
+
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		_ = tp.Insert(msg.Transaction{})
+	}()
+
+	go func() {
+		defer wg.Done()
+		tp.Delete(msg.Transaction{})
+	}()
+
+	go func() {
+		defer wg.Done()
+		txs := tp.Peek(1)
+		t.Logf("peek transactions: %v", txs)
+	}()
+
+	wg.Wait()
 }

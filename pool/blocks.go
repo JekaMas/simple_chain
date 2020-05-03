@@ -4,16 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"simple_chain/msg"
+	"sync"
 )
 
-type BlockPool map[uint64][]msg.Block
-
-func NewBlockPool() BlockPool {
-	return make(map[uint64][]msg.Block)
+type BlockPool struct {
+	alloc map[uint64][]msg.Block
+	mx    sync.Mutex
 }
 
-func (p BlockPool) Insert(b msg.Block) error {
-	pool := p[b.BlockNum]
+func NewBlockPool() BlockPool {
+	return BlockPool{
+		alloc: make(map[uint64][]msg.Block),
+		mx:    sync.Mutex{},
+	}
+}
+
+func (p *BlockPool) Insert(b msg.Block) error {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
+	pool := p.alloc[b.BlockNum]
 	blockHash, err := b.Hash()
 	if err != nil {
 		return fmt.Errorf("incorrect block: %v", err)
@@ -30,12 +40,15 @@ func (p BlockPool) Insert(b msg.Block) error {
 	}
 
 	pool = append(pool, b)
-	p[b.BlockNum] = pool
+	p.alloc[b.BlockNum] = pool
 	return nil
 }
 
-func (p BlockPool) Pop(blockNum uint64) (msg.Block, error) {
-	pool, ok := p[blockNum]
+func (p *BlockPool) Pop(blockNum uint64) (msg.Block, error) {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
+	pool, ok := p.alloc[blockNum]
 	if !ok {
 		return msg.Block{}, errors.New("no such block")
 	}
@@ -44,11 +57,14 @@ func (p BlockPool) Pop(blockNum uint64) (msg.Block, error) {
 	}
 
 	block := pool[len(pool)-1] // fixme get last one
-	p[blockNum] = pool[:len(pool)-1]
+	p.alloc[blockNum] = pool[:len(pool)-1]
 	return block, nil
 }
 
-func (p BlockPool) HasBlockNum(blockNum uint64) bool {
-	pool, ok := p[blockNum]
+func (p *BlockPool) HasBlockNum(blockNum uint64) bool {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
+	pool, ok := p.alloc[blockNum]
 	return ok && len(pool) > 0
 }
