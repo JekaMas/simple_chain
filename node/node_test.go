@@ -394,7 +394,6 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	}
 
 	block, _ := vd.newBlock()
-
 	if err := nd1.insertBlock(block); err != nil {
 		t.Fatalf("insert block err: %v", err)
 	}
@@ -403,7 +402,7 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 		t.Fatalf("add peer err: %v", err)
 	}
 
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	if len(nd2.blocks) != 2 {
 		t.Fatalf("no block was synced")

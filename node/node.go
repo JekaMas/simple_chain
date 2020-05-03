@@ -21,6 +21,7 @@ const (
 	MessagesBusLen                = 100
 	TransactionFee                = 10
 	TransactionSuccessBlocksDelta = 6
+	MessageSendTimeout            = time.Second * 3
 )
 
 type connectedPeer struct {
@@ -206,18 +207,19 @@ func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, er
 
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	m := msg.Message{
-		From: c.address,
+		From: c.NodeAddress(),
 		Data: data,
 	}
 	c.SendMessageTo(cp, ctx, m)
 }
 
 func (c *Node) SendMessageTo(cp connectedPeer, ctx context.Context, msg msg.Message) {
-	select {
-	case cp.Out <- msg:
-	case <-ctx.Done():
-	case <-time.After(time.Second * 3):
-	}
+	cp.Out <- msg
+	//select {
+	//case :
+	//case <-ctx.Done():
+	//case <-time.After(MessageSendTimeout):
+	//}
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
@@ -231,31 +233,32 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 		case <-ctx.Done():
 			return
 		case message := <-peer.In:
-			err := c.processMessage(ctx, peer, message)
+			broadcast, err := c.processMessage(ctx, peer, message)
 			if err != nil {
 				c.logger.Errorf("%v process peer error: %v", simplifyAddress(c.address), err)
 				continue
 			}
-			//broadcast to connected peers
-			c.Broadcast(ctx, message)
+			if broadcast {
+				c.Broadcast(ctx, message)
+			}
 		}
 	}
 }
 
-func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message msg.Message) error {
+func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message msg.Message) (bool, error) {
 	switch m := message.Data.(type) {
 	case msg.Transaction:
-		return c.processTransaction(peer, m)
+		return true, c.processTransaction(peer, m)
 	case msg.Block:
-		return c.processBlockMessage(ctx, peer, m)
+		return !c.hasBlock(m), c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
-		return c.processBlocksRequest(ctx, peer, m)
+		return m.To == c.NodeAddress(), c.processBlocksRequest(ctx, peer, m)
 	case msg.BlocksResponse:
-		return c.processBlocksResponse(ctx, peer, m)
+		return m.To == c.NodeAddress(), c.processBlocksResponse(ctx, peer, m)
 	case msg.NodeInfoResp:
-		return c.processNodeInfo(ctx, peer, m)
+		return false, c.processNodeInfo(ctx, peer, m)
 	}
-	return nil
+	return false, nil
 }
 
 // processTransaction - received transaction
@@ -324,9 +327,26 @@ func (c *Node) processBlock(block msg.Block) error {
 	return nil
 }
 
+func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {
+	if c.NodeAddress() == m.To && m.Error != nil {
+		c.logger.Infof("%v has no block with hash [%v]", peer.Address, m.BlockHash)
+		c.logger.Infof("%v revert block [%v]", simplifyAddress(c.NodeAddress()), c.lastBlockHash())
+
+		if err := c.revertLastBlock(); err != nil {
+			return err
+		}
+		c.SendTo(peer, ctx, msg.BlocksRequest{
+			To:            peer.Address,
+			LastBlockHash: c.lastBlockHash(),
+		})
+	}
+	return nil
+}
+
 // send blocks to peer that requested
 func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req msg.BlocksRequest) error {
-	// if my request
+	c.logger.Debugf("%v blocks request from %v", simplifyAddress(c.address), simplifyAddress(peer.Address))
+
 	if c.NodeAddress() == req.To {
 		fromBlock, err := c.GetBlockByHash(req.LastBlockHash)
 		if err != nil {
@@ -347,27 +367,8 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 	return nil
 }
 
-func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {
-	if c.NodeAddress() == m.To && m.Error != nil {
-		c.logger.Infof("%v has no block with hash [%v]", peer.Address, m.BlockHash)
-		c.logger.Infof("%v revert block [%v]", simplifyAddress(c.NodeAddress()), c.lastBlockHash())
-
-		if err := c.revertLastBlock(); err != nil {
-			return err
-		}
-		c.SendTo(peer, ctx, msg.BlocksRequest{
-			To:            peer.Address,
-			LastBlockHash: c.lastBlockHash(),
-		})
-	}
-	return nil
-}
-
 // get info from another peer
 func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.NodeInfoResp) error {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
 	if c.totalDifficulty() < res.TotalDifficulty {
 		c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
 		c.SendTo(peer, ctx, msg.BlocksRequest{
@@ -416,7 +417,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 		return errors.New("incorrect block num")
 	}
 	if block.BlockNum <= c.lastBlockNum {
-		return fmt.Errorf("already have block [%v <= %v]", block.BlockNum, c.lastBlockNum)
+		return fmt.Errorf("already has block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
 	if len(block.Transactions) == 0 {
 		return errors.New("no coinbase transaction")
@@ -573,6 +574,24 @@ func (c *Node) revertLastBlock() error {
 	c.state.RevertBlock()
 	c.blocks = c.blocks[:len(c.blocks)-1]
 	return nil
+}
+
+func (c *Node) hasBlock(m msg.Block) bool {
+	hash, err := m.Hash()
+	if err != nil {
+		return false
+	}
+
+	for _, block := range c.blocks {
+		blockHash, err := block.Hash()
+		if err != nil {
+			continue
+		}
+		if hash == blockHash {
+			return true
+		}
+	}
+	return false
 }
 
 func applyCoinbaseTransaction(state storage.Storage, tr msg.Transaction) error {

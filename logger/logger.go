@@ -5,9 +5,10 @@ import "fmt"
 const (
 	Info  = 2
 	Error = 4
+	Debug = 8
 
 	None = 0
-	All  = Info + Error
+	All  = 255
 )
 
 type Logger struct {
@@ -30,6 +31,12 @@ func (l Logger) Errorf(format string, a ...interface{}) {
 
 func (l Logger) Infof(format string, a ...interface{}) {
 	if l.types&Info > 0 {
+		fmt.Printf(format+"\n", a...)
+	}
+}
+
+func (l Logger) Debugf(format string, a ...interface{}) {
+	if l.types&Debug > 0 {
 		fmt.Printf(format+"\n", a...)
 	}
 }
