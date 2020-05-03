@@ -372,7 +372,7 @@ func TestNode_IsTransactionSuccess(t *testing.T) {
 	}
 }
 
-func TestNodesSyncTwoNodes(t *testing.T) {
+func TestNode_SyncTwoNodes(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one": 200,
@@ -413,6 +413,46 @@ func TestNodesSyncTwoNodes(t *testing.T) {
 	}
 }
 
+func TestNode_revertBlock(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one": 200,
+		"two": 50,
+	}
+
+	nd, _ := NewNode(gen)
+	vd, _ := NewValidator(gen)
+	_ = vd.AddTransaction(msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 100,
+		Fee:    10,
+	})
+
+	block, _ := vd.newBlock()
+	stateBefore := nd.state.Copy()
+
+	_ = nd.insertBlock(block)
+	if reflect.DeepEqual(stateBefore, nd.state) {
+		t.Fatalf("state was not changed: check insert block function")
+	}
+
+	err := nd.revertLastBlock()
+	if err != nil {
+		t.Fatalf("error while reverting last block: %v", err)
+	}
+
+	if nd.lastBlockNum != 0 {
+		t.Fatalf("last block num was not changed")
+	}
+	if len(nd.blocks) != 1 {
+		t.Fatalf("block len not correct: get=%v, want=%v", len(nd.blocks), 1)
+	}
+	if !reflect.DeepEqual(nd.state, stateBefore) {
+		t.Fatalf("block was not reverted: \n get state: %v, \n before state: %v", nd.state, stateBefore)
+	}
+}
+
 func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	gen := genesis.New()
 	nd1, _ := NewNode(gen)
@@ -432,7 +472,7 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	}
 
 	_ = nd1.AddPeer(nd2)
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Second * 1)
 
 	if nd1.totalDifficulty() != 6 {
 		t.Errorf("wrong total difficulty: get=%v, want=%v", nd1.totalDifficulty(), 6)

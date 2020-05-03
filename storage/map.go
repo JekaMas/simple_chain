@@ -53,8 +53,22 @@ func (m *MapStorage) Copy() Storage {
 	for key, value := range m.Alloc {
 		alloc[key] = value
 	}
+
+	history := make([]operation, len(m.History))
+	copy(history, m.History)
+
 	return &MapStorage{
-		Alloc: alloc,
+		Alloc:   alloc,
+		History: history,
+	}
+}
+
+func (m *MapStorage) PutOrAdd(key string, data uint64) error {
+	_, ok := m.Alloc[key]
+	if ok {
+		return m.Add(key, data)
+	} else {
+		return m.Put(key, data)
 	}
 }
 
@@ -79,7 +93,10 @@ func (m *MapStorage) PutMap(alloc map[string]uint64) error {
 }
 
 func (m *MapStorage) Add(key string, amount uint64) error {
-	fund, _ := m.Alloc[key]
+	fund, ok := m.Alloc[key]
+	if !ok {
+		return fmt.Errorf("no such account: %v", key)
+	}
 
 	m.Alloc[key] = fund + amount
 	m.History = append(m.History, operation{"Add", key, amount})

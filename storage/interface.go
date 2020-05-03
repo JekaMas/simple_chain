@@ -8,6 +8,7 @@ import (
 type Storage interface {
 	Put(key string, data uint64) error
 	PutMap(map[string]uint64) error
+	PutOrAdd(key string, data uint64) error
 	Get(key string) (uint64, error)
 
 	// Operations

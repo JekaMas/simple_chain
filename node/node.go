@@ -22,6 +22,7 @@ const (
 	TransactionFee                = 10
 	TransactionSuccessBlocksDelta = 6
 	MessageSendTimeout            = time.Second * 3
+	SimplifiedAddressLen          = BlockDifficulty + 1
 )
 
 type connectedPeer struct {
@@ -329,8 +330,8 @@ func (c *Node) processBlock(block msg.Block) error {
 
 func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {
 	if c.NodeAddress() == m.To && m.Error != nil {
-		c.logger.Infof("%v has no block with hash [%v]", peer.Address, m.BlockHash)
-		c.logger.Infof("%v revert block [%v]", simplifyAddress(c.NodeAddress()), c.lastBlockHash())
+		c.logger.Infof("%v has no block with hash [%v]", simplifyAddress(peer.Address), simplifyAddress(m.BlockHash))
+		c.logger.Infof("%v revert block [%v]", simplifyAddress(c.NodeAddress()), simplifyAddress(c.lastBlockHash()))
 
 		if err := c.revertLastBlock(); err != nil {
 			return err
@@ -390,10 +391,10 @@ func PubKeyToAddress(key crypto.PublicKey) (string, error) {
 }
 
 func simplifyAddress(address string) string {
-	if len(address) < 4 {
+	if len(address) < SimplifiedAddressLen {
 		return address
 	}
-	return address[:4]
+	return address[:SimplifiedAddressLen]
 }
 
 func (c *Node) newTransaction(toAddress string, amount uint64) (msg.Transaction, error) {
@@ -419,10 +420,15 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	if block.BlockNum <= c.lastBlockNum {
 		return fmt.Errorf("already has block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
+	// check parent hash
+	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
+	if prevBlockHash != block.PrevBlockHash {
+		return errors.New("parent hash is incorrect")
+	}
+
 	if len(block.Transactions) == 0 {
 		return errors.New("no coinbase transaction")
 	}
-
 	validatorAddr, err := PubKeyToAddress(block.PubKey)
 	if err != nil {
 		return fmt.Errorf("can't verify block: %v", err)
@@ -480,12 +486,6 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 	if getBlockHash != wantBlockHash {
 		return errors.New("block hash is incorrect")
-	}
-
-	// check parent hash
-	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
-	if prevBlockHash != block.PrevBlockHash {
-		return errors.New("parent hash is incorrect")
 	}
 
 	return nil
@@ -573,6 +573,8 @@ func (c *Node) revertLastBlock() error {
 
 	c.state.RevertBlock()
 	c.blocks = c.blocks[:len(c.blocks)-1]
+	c.lastBlockNum--
+
 	return nil
 }
 
@@ -618,7 +620,7 @@ func applyTransaction(state storage.Storage, validatorAddress string, tr msg.Tra
 	if err != nil {
 		return err
 	}
-	err = state.Add(validatorAddress, tr.Fee)
+	err = state.PutOrAdd(validatorAddress, tr.Fee)
 	if err != nil {
 		return err
 	}
