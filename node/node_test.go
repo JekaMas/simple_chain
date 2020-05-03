@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestNodeInsertBlockSuccess(t *testing.T) {
+func TestNode_InsertBlockSuccess(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one":   20,
@@ -50,7 +50,7 @@ func TestNodeInsertBlockSuccess(t *testing.T) {
 	}
 }
 
-func TestApplyTransactionSuccess(t *testing.T) {
+func TestNode_ApplyTransactionSuccess(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one":   20,
@@ -85,7 +85,7 @@ func TestApplyTransactionSuccess(t *testing.T) {
 	}
 }
 
-func TestVerifyBlockSuccess(t *testing.T) {
+func TestNode_VerifyBlockSuccess(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one":   20,
@@ -116,7 +116,7 @@ func TestVerifyBlockSuccess(t *testing.T) {
 	}
 }
 
-func TestVerifyTransactionSuccess(t *testing.T) {
+func TestNode_VerifyTransactionSuccess(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one":   20,
@@ -144,7 +144,7 @@ func TestVerifyTransactionSuccess(t *testing.T) {
 	}
 }
 
-func TestVerifySameBlockFailure(t *testing.T) {
+func TestNode_VerifySameBlockFailure(t *testing.T) {
 	gen := genesis.New()
 	vd, _ := NewValidator(gen)
 	nd, _ := NewNode(gen)
@@ -161,45 +161,6 @@ func TestVerifySameBlockFailure(t *testing.T) {
 		t.Error("same block verified")
 	} else {
 		t.Log(err)
-	}
-}
-
-func TestNodesSyncBlockStopBroadcasting(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	gen := genesis.New()
-	vd, _ := NewValidator(gen)
-	nd, _ := NewNode(gen)
-
-	in := make(chan msg.Message, MessagesBusLen)
-	out := make(chan msg.Message, MessagesBusLen)
-
-	block, _ := vd.newBlock()
-
-	peer := connectedPeer{
-		Address: "abc",
-		In:      in,
-		Out:     out,
-		cancel:  cancel,
-	}
-
-	go nd.peerLoop(ctx, peer)
-
-	// broadcast after receiving block
-	in <- msg.Message{From: "abc", Data: block}
-	<-out
-
-	// send same block
-	in <- msg.Message{From: "abc", Data: block}
-	select {
-	case b := <-out:
-		if reflect.DeepEqual(b, block) {
-			t.Fatalf("endless broadcasting")
-		}
-		t.Fatalf("received phantom message: %v", b)
-	case <-time.After(time.Millisecond):
-		// no messages - test passed
-		return
 	}
 }
 
@@ -271,48 +232,7 @@ func TestNode_IsTransactionSuccess(t *testing.T) {
 	}
 }
 
-func TestNode_SyncTwoNodes(t *testing.T) {
-	gen := genesis.New()
-	gen.Alloc = map[string]uint64{
-		"one": 200,
-		"two": 50,
-	}
-
-	nd1, _ := NewNode(gen)
-	nd2, _ := NewNode(gen)
-
-	vd, _ := NewValidator(gen)
-	err := vd.AddTransaction(msg.Transaction{
-		From:   "one",
-		To:     "two",
-		Amount: 100,
-		Fee:    10,
-	})
-	if err != nil {
-		t.Errorf("add transaction error: %v", err)
-	}
-
-	block, _ := vd.newBlock()
-	if err := nd1.insertBlock(block); err != nil {
-		t.Fatalf("insert block err: %v", err)
-	}
-
-	if err := nd1.AddPeer(nd2); err != nil {
-		t.Fatalf("add peer err: %v", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	if len(nd2.blocks) != 2 {
-		t.Fatalf("no block was synced")
-	}
-
-	if !reflect.DeepEqual(nd1.state, nd2.state) {
-		t.Fatalf("wrong synced state")
-	}
-}
-
-func TestNode_revertBlock(t *testing.T) {
+func TestNode_RevertBlock(t *testing.T) {
 	gen := genesis.New()
 	gen.Alloc = map[string]uint64{
 		"one": 200,
@@ -358,7 +278,89 @@ func TestNode_revertBlock(t *testing.T) {
 	}
 }
 
-func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
+/* --- Network ------------------------------------------------------------------------------------------------------ */
+
+func TestNode_SyncBlockStopBroadcasting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	gen := genesis.New()
+	vd, _ := NewValidator(gen)
+	nd, _ := NewNode(gen)
+
+	in := make(chan msg.Message, MessagesBusLen)
+	out := make(chan msg.Message, MessagesBusLen)
+
+	block, _ := vd.newBlock()
+
+	peer := connectedPeer{
+		Address: "abc",
+		In:      in,
+		Out:     out,
+		cancel:  cancel,
+	}
+
+	go nd.peerLoop(ctx, peer)
+
+	// broadcast after receiving block
+	in <- msg.Message{From: "abc", Data: block}
+	<-out
+
+	// send same block
+	in <- msg.Message{From: "abc", Data: block}
+	select {
+	case b := <-out:
+		if reflect.DeepEqual(b, block) {
+			t.Fatalf("endless broadcasting")
+		}
+		t.Fatalf("received phantom message: %v", b)
+	case <-time.After(time.Millisecond):
+		// no messages - test passed
+		return
+	}
+}
+
+func TestNode_SyncTwoNodes(t *testing.T) {
+	gen := genesis.New()
+	gen.Alloc = map[string]uint64{
+		"one": 200,
+		"two": 50,
+	}
+
+	nd1, _ := NewNode(gen)
+	nd2, _ := NewNode(gen)
+
+	vd, _ := NewValidator(gen)
+	err := vd.AddTransaction(msg.Transaction{
+		From:   "one",
+		To:     "two",
+		Amount: 100,
+		Fee:    10,
+	})
+	if err != nil {
+		t.Errorf("add transaction error: %v", err)
+	}
+
+	block, _ := vd.newBlock()
+	if err := nd1.insertBlock(block); err != nil {
+		t.Fatalf("insert block err: %v", err)
+	}
+
+	if err := nd1.AddPeer(nd2); err != nil {
+		t.Fatalf("add peer err: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	if len(nd2.blocks) != 2 {
+		t.Fatalf("no block was synced")
+	}
+
+	if !reflect.DeepEqual(nd1.state, nd2.state) {
+		t.Fatalf("wrong synced state")
+	}
+}
+
+func TestNode_SyncTwoNodesWithDifferentTotalDifficulty(t *testing.T) {
 	gen := genesis.New()
 	nd1, _ := NewNode(gen)
 	nd2, _ := NewNode(gen)
@@ -399,10 +401,28 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	}
 }
 
-/* --- Network ------------------------------------------------------------------------------------------------------ */
+func TestNode_SyncOneNodeOneValidator(t *testing.T) {
+	gen := genesis.New()
 
-func TestNode_SyncFullyConnected(t *testing.T) {
-	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+	nd, _ := NewNode(gen)
+	vd, _ := NewValidator(gen)
+
+	_ = nd.AddPeer(vd)
+
+	vd.startValidating()
+	time.Sleep(time.Millisecond * 100)
+
+	_ = vd.stopValidating()
+	time.Sleep(time.Millisecond * 300)
+
+	if !reflect.DeepEqual(nd.state, vd.state) {
+		t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+			log.Simplify(nd.NodeAddress()), log.Simplify(vd.NodeAddress()), nd.state, vd.state)
+	}
+}
+
+func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
+	peers, validators, _ := makeSomePeers(2, 1, uint64(100000))
 
 	// fully connected
 	for i := 0; i < len(peers); i++ {
@@ -435,6 +455,80 @@ func TestNode_SyncFullyConnected(t *testing.T) {
 	}
 }
 
+func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
+	peers, validators, _ := makeSomePeers(2, 2, uint64(100000))
+
+	// fully connected
+	for i := 0; i < len(peers); i++ {
+		for j := i + 1; j < len(peers); j++ {
+			if err := peers[i].AddPeer(peers[j]); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
+				if len(peer1.blocks) != len(peer2.blocks) {
+					t.Fatalf("state and blocks len difference")
+				}
+			}
+		}
+	}
+}
+
+func TestNode_SyncFullyConnected(t *testing.T) {
+	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+
+	// fully connected
+	for i := 0; i < len(peers); i++ {
+		for j := i + 1; j < len(peers); j++ {
+			if err := peers[i].AddPeer(peers[j]); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
+				if len(peer1.blocks) != len(peer2.blocks) {
+					t.Fatalf("state and blocks len difference")
+				}
+			}
+		}
+	}
+}
+
 func TestNode_SyncLinear(t *testing.T) {
 	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
 
@@ -460,8 +554,11 @@ func TestNode_SyncLinear(t *testing.T) {
 	for i, peer1 := range peers {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
 					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
+				if len(peer1.blocks) != len(peer2.blocks) {
+					t.Fatalf("state and blocks len difference")
+				}
 			}
 		}
 	}
@@ -496,8 +593,11 @@ func TestNode_SyncRing(t *testing.T) {
 	for i, peer1 := range peers {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
 					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
+				if len(peer1.blocks) != len(peer2.blocks) {
+					t.Fatalf("state and blocks len difference")
+				}
 			}
 		}
 	}
@@ -531,8 +631,11 @@ func TestNode_SyncStar(t *testing.T) {
 	for i, peer1 := range peers {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
 					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
+				if len(peer1.blocks) != len(peer2.blocks) {
+					t.Fatalf("state and blocks len difference")
+				}
 			}
 		}
 	}

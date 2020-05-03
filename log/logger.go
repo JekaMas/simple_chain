@@ -10,10 +10,8 @@ const (
 	Info  = 2
 	Error = 4
 	Debug = 8
-
-	None = 0
-	All  = 255
-
+	None  = 0
+	All   = 255
 	// extra (not info)
 	Chain = 256
 )

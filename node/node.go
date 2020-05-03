@@ -165,17 +165,11 @@ func (c *Node) AddTransaction(tr msg.Transaction) error {
 	return nil
 }
 
-func (c *Node) GetBlockByNumber(ID uint64) msg.Block {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
-	return c.blocks[ID] // todo make check and other stuff
+func (c *Node) getBlockByNumber(ID uint64) msg.Block {
+	return c.blocks[ID]
 }
 
-func (c *Node) GetBlockByHash(hash string) (msg.Block, error) {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
+func (c *Node) getBlockByHash(hash string) (msg.Block, error) {
 	for _, block := range c.blocks {
 		blockHash, err := block.Hash()
 		if err != nil {
@@ -320,6 +314,9 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 }
 
 func (c *Node) processBlock(block msg.Block) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	if err := c.verifyBlock(block); err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
@@ -354,7 +351,7 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 		log.Simplify(c.address), log.Simplify(peer.Address), log.Simplify(req.LastBlockHash))
 
 	if c.NodeAddress() == req.To {
-		fromBlock, err := c.GetBlockByHash(req.LastBlockHash)
+		fromBlock, err := c.getBlockByHash(req.LastBlockHash)
 		if err != nil {
 			c.SendTo(peer, ctx, msg.BlocksResponse{
 				To:        peer.Address,
@@ -367,7 +364,7 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 		for id := fromBlock.BlockNum + 1; id <= c.lastBlockNum; id++ {
 			c.logger.Infof("%v send block [%v] to %v",
 				log.Simplify(c.address), log.Simplify(c.blocks[id].BlockHash), log.Simplify(peer.Address))
-			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
+			c.SendTo(peer, ctx, c.getBlockByNumber(id))
 		}
 	}
 	return nil
@@ -421,7 +418,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 
 	// check parent hash
-	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
+	prevBlockHash := c.getBlockByNumber(block.BlockNum - 1).BlockHash
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
 	}
@@ -505,9 +502,6 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 }
 
 func (c *Node) insertBlock(b msg.Block) error {
-	// method changes blocks chain
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
 	// and changes node state
 	c.state.Lock()
 	defer c.state.Unlock()

@@ -129,7 +129,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	// add reward transaction
 	txs = append([]msg.Transaction{c.coinbaseTransaction()}, txs...)
 
-	prevBlockHash := c.GetBlockByNumber(c.lastBlockNum).BlockHash
+	prevBlockHash := c.getBlockByNumber(c.lastBlockNum).BlockHash
 
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,

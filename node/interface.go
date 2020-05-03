@@ -24,6 +24,6 @@ type PublicAPI interface {
 	SignTransaction(transaction msg.Transaction) (msg.Transaction, error)
 
 	//sync
-	GetBlockByNumber(ID uint64) msg.Block
+	getBlockByNumber(ID uint64) msg.Block
 	NodeInfo() msg.NodeInfoResp
 }
