@@ -2,115 +2,13 @@ package node
 
 import (
 	"context"
+	"crypto/ed25519"
 	"reflect"
 	"simple_chain/genesis"
 	"simple_chain/msg"
 	"testing"
 	"time"
 )
-
-/* --- BAD ---------------------------------------------------------------------------------------------------------- */
-
-//func TestSyncBlockSuccess(t *testing.T) {
-//	numOfValidators := 3
-//	numOfPeers := 5
-//
-//	initialBalance := uint64(100000)
-//	peers := make([]*Node, numOfPeers)
-//	gen := genesis.New()
-//
-//	keys := make([]ed25519.PrivateKey, numOfPeers)
-//	for i := range keys {
-//		_, key, err := ed25519.GenerateKey(nil)
-//		if err != nil {
-//			t.Fatal(err)
-//		}
-//		// initialize validators
-//		keys[i] = key
-//		if numOfValidators > 0 {
-//			gen.Validators = append(gen.Validators, key.Public())
-//			numOfValidators--
-//		}
-//		// initialize other nodes
-//		address, err := PubKeyToAddress(key.Public())
-//		if err != nil {
-//			t.Error(err)
-//		}
-//		gen.Alloc[address] = initialBalance
-//	}
-//
-//	var err error
-//	for i := 0; i < numOfPeers; i++ {
-//		peers[i], err = NewNode(keys[i], &gen)
-//		if err != nil {
-//			t.Error(err)
-//		}
-//	}
-//	// add all peers to each other
-//	for i := 0; i < len(peers); i++ {
-//		for j := i + 1; j < len(peers); j++ {
-//			err = peers[i].AddPeer(peers[j])
-//			if err != nil {
-//				t.Error(err)
-//			}
-//		}
-//	}
-//	// initialize test transaction
-//	tr := msg.Transaction{
-//		From:   peers[3].NodeAddress(),
-//		To:     peers[4].NodeAddress(),
-//		Amount: 100,
-//		Fee:    10,
-//		PubKey: keys[3].Public().(ed25519.PublicKey),
-//	}
-//
-//	tr, err = peers[3].SignTransaction(tr)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	err = applyTransaction(peers[0].state, peers[0].NodeAddress(), tr)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	//wait transaction processing
-//	time.Sleep(time.Millisecond * 1)
-//
-//	//check "from" balance
-//	balance, err := peers[0].GetBalance(peers[3].NodeAddress())
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	if balance != initialBalance-100-10 {
-//		t.Fatalf("Incorrect from balance: %v vs %v", balance, initialBalance-100-10)
-//	}
-//
-//	//check "to" balance
-//	balance, err = peers[0].GetBalance(peers[4].NodeAddress())
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	if balance != initialBalance+100 {
-//		t.Fatal("Incorrect to balance")
-//	}
-//
-//	//check validators balance
-//	for i := 0; i < 3; i++ {
-//		balance, err = peers[0].GetBalance(peers[i].NodeAddress())
-//		if err != nil {
-//			t.Error(err)
-//		}
-//
-//		if balance > initialBalance {
-//			t.Error("Incorrect validator balance")
-//		}
-//	}
-//}
-
-/* --- GOOD --------------------------------------------------------------------------------------------------------- */
 
 func TestNodeInsertBlockSuccess(t *testing.T) {
 	gen := genesis.New()
@@ -498,4 +396,177 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	if !reflect.DeepEqual(nd1.state, nd2.state) {
 		t.Fatalf("states are not equal")
 	}
+}
+
+/* --- Network ------------------------------------------------------------------------------------------------------ */
+
+func TestNode_SyncFullyConnected(t *testing.T) {
+	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+
+	// fully connected
+	for i := 0; i < len(peers); i++ {
+		for j := i + 1; j < len(peers); j++ {
+			if err := peers[i].AddPeer(peers[j]); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+			}
+		}
+	}
+}
+
+func TestNode_SyncLinear(t *testing.T) {
+	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+
+	// linear
+	for i := 1; i < len(peers); i++ {
+		if err := peers[i-1].AddPeer(peers[i]); err != nil {
+			t.Error(err)
+		}
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+			}
+		}
+	}
+}
+
+func TestNode_SyncRing(t *testing.T) {
+	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+
+	// ring
+	for i := 1; i < len(peers); i++ {
+		if err := peers[i-1].AddPeer(peers[i]); err != nil {
+			t.Error(err)
+		}
+	}
+	// close ring
+	if err := peers[0].AddPeer(peers[len(peers)-1]); err != nil {
+		t.Error(err)
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+			}
+		}
+	}
+}
+
+func TestNode_SyncStar(t *testing.T) {
+	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+
+	// star
+	centerIndex := 2
+	for i := 0; i < len(peers); i++ {
+		if i != centerIndex {
+			if err := peers[centerIndex].AddPeer(peers[i]); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+
+	for _, val := range validators {
+		val.startValidating()
+	}
+
+	time.Sleep(time.Millisecond * 100)
+
+	for _, val := range validators {
+		_ = val.stopValidating()
+	}
+
+	time.Sleep(time.Millisecond * 300)
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
+				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+			}
+		}
+	}
+}
+
+/* --- Utils -------------------------------------------------------------------------------------------------------- */
+
+// makeSomePeers - return (peers, validators, nodes), where peers = validators + nodes
+func makeSomePeers(nNodes uint64, nVals uint64, initBalance uint64) ([]*Node, []*Validator, []*Node) {
+	peers := make([]*Node, nNodes+nVals)
+	nodes := make([]*Node, nNodes)
+	vals := make([]*Validator, nVals)
+
+	keys := make([]ed25519.PrivateKey, nNodes+nVals)
+	gen := genesis.New()
+
+	for i := range keys {
+		_, keys[i], _ = ed25519.GenerateKey(nil)
+		address, _ := PubKeyToAddress(keys[i].Public())
+		gen.Alloc[address] = initBalance
+	}
+
+	for i, key := range keys {
+		if nVals > 0 {
+			val, _ := NewValidatorWithKey(gen, key)
+			peers[i] = &val.Node
+			vals[nVals-1] = val
+			nVals--
+		} else if nNodes > 0 {
+			node, _ := NewNodeWithKey(gen, key)
+			peers[i] = node
+			nodes[nNodes-1] = node
+			nNodes--
+		}
+	}
+
+	return peers, vals, nodes
 }

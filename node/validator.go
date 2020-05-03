@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"simple_chain/genesis"
 	"simple_chain/msg"
@@ -19,12 +20,21 @@ const (
 
 type Validator struct {
 	Node
-	transactionPool pool.TransactionPool
+	transactionPool  pool.TransactionPool
+	validatingCancel context.CancelFunc
 }
 
 func NewValidator(genesis genesis.Genesis) (*Validator, error) {
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return nil, err
+	}
+	return NewValidatorWithKey(genesis, key)
+}
+
+func NewValidatorWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Validator, error) {
 	// init node
-	nd, err := NewNode(genesis)
+	nd, err := NewNodeWithKey(genesis, key)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +46,7 @@ func NewValidator(genesis genesis.Genesis) (*Validator, error) {
 	}, nil
 }
 
-// AddTransaction - add to transaction pool (for validator)
+// AddTransaction - add verified ! transaction to transaction pool (for validator)
 func (c *Validator) AddTransaction(tr msg.Transaction) error {
 	return c.transactionPool.Insert(tr)
 }
@@ -46,33 +56,67 @@ func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer,
 	if err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
-
+	// stop if possible
+	needStart := c.stopValidating() == nil
+	// remove transactions from pool
 	for _, tr := range block.Transactions {
 		c.transactionPool.Delete(tr)
+	}
+	// start if possible
+	if needStart {
+		c.startValidating()
 	}
 	return nil
 }
 
 func (c *Validator) startValidating() {
-	ctx := context.Background()
-	for {
-		c.logger.Infof("%v validating block...", simplifyAddress(c.address))
+	ctx, cancel := context.WithCancel(context.Background())
+	c.validatingCancel = cancel
 
-		// validate new block
-		block, err := c.newBlock()
-		if err != nil {
-			c.logger.Errorf("error generating block: %v", err)
-			// stop validating
-			return
+	c.logger.Infof("%v validating blocks...", simplifyAddress(c.address))
+	go func() {
+		for {
+			// validate new block
+			block, err := c.newBlock()
+			if err != nil {
+				c.logger.Errorf("error generating block: %v", err)
+				// stop validating
+				return
+			}
+			c.logger.Infof("%v generated new block [%v]",
+				simplifyAddress(c.address), simplifyAddress(block.BlockHash))
+
+			select {
+			case <-ctx.Done():
+				// return transactions
+				if len(block.Transactions) > 1 {
+					for _, tr := range block.Transactions[1:] {
+						err := c.AddTransaction(tr)
+						if err != nil {
+							c.logger.Errorf("can't restore transaction: %v", err)
+						}
+					}
+				}
+				return
+			default:
+				// send new block
+				c.Broadcast(ctx, msg.Message{
+					From: c.address,
+					Data: block,
+				})
+			}
 		}
+	}()
+}
 
-		// send new block
-		c.logger.Infof("%v generated new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
-		c.Broadcast(ctx, msg.Message{
-			From: c.address,
-			Data: block,
-		})
+func (c *Validator) stopValidating() error {
+	if c.validatingCancel == nil {
+		return errors.New("no validating was started")
 	}
+
+	c.validatingCancel()
+	c.validatingCancel = nil
+	return nil
 }
 
 func (c *Validator) newBlock() (msg.Block, error) {

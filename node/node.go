@@ -137,6 +137,10 @@ func (c *Node) Broadcast(ctx context.Context, msg msg.Message) {
 	defer c.mxPeers.Unlock()
 
 	for _, v := range c.peers {
+		// There is no verification that the message does not belong
+		// to the receiver, because the validator waits until the block
+		// returns from the network before adding it to its chain and
+		// changing the state.
 		if v.Address != c.address {
 			c.SendMessageTo(v, ctx, msg)
 		}
@@ -156,8 +160,9 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 	return fund, nil
 }
 
-// AddTransaction - nothing for simple node
+// AddTransaction - add verified ! transaction to transaction pool (for validator)
 func (c *Node) AddTransaction(tr msg.Transaction) error {
+	// todo add to transaction pool for node too
 	return nil
 }
 
@@ -415,12 +420,14 @@ type Block struct {
 }
 */
 func (c *Node) verifyBlock(block msg.Block) error {
+	// check block num
 	if block.BlockNum < 0 {
 		return errors.New("incorrect block num")
 	}
 	if block.BlockNum <= c.lastBlockNum {
 		return fmt.Errorf("already has block [%v <= %v]", block.BlockNum, c.lastBlockNum)
 	}
+
 	// check parent hash
 	prevBlockHash := c.GetBlockByNumber(block.BlockNum - 1).BlockHash
 	if prevBlockHash != block.PrevBlockHash {
@@ -445,6 +452,7 @@ func (c *Node) verifyBlock(block msg.Block) error {
 			return fmt.Errorf("can't verify block: %v", err)
 		}
 	}
+
 	// verify coinbase transaction
 	coinbase := block.Transactions[0]
 	if coinbase.From != "" || coinbase.Amount != BlockReward {
@@ -505,8 +513,12 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 }
 
 func (c *Node) insertBlock(b msg.Block) error {
+	// method changes blocks chain
 	c.mxBlocks.Lock()
 	defer c.mxBlocks.Unlock()
+	// and changes node state
+	c.state.Lock()
+	defer c.state.Unlock()
 
 	validatorAddr, err := PubKeyToAddress(b.PubKey)
 	if err != nil {
@@ -514,7 +526,6 @@ func (c *Node) insertBlock(b msg.Block) error {
 	}
 
 	c.state.PutBlockToHistory(b.BlockNum)
-
 	if len(b.Transactions) > 1 {
 		for _, tr := range b.Transactions[1:] {
 			err := applyTransaction(c.state, validatorAddr, tr)
@@ -601,21 +612,14 @@ func (c *Node) hasBlock(m msg.Block) bool {
 }
 
 func applyCoinbaseTransaction(state storage.Storage, tr msg.Transaction) error {
-	state.Lock()
-	defer state.Unlock()
-
 	err := state.PutOrAdd(tr.To, tr.Amount)
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
 func applyTransaction(state storage.Storage, validatorAddress string, tr msg.Transaction) error {
-	state.Lock()
-	defer state.Unlock()
-
 	err := state.Sub(tr.From, tr.Amount+tr.Fee)
 	if err != nil {
 		return err
