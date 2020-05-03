@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"simple_chain/genesis"
+	"simple_chain/log"
 	"simple_chain/msg"
 	"simple_chain/pool"
 	"simple_chain/storage"
@@ -73,7 +74,7 @@ func (c *Validator) startValidating() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.validatingCancel = cancel
 
-	c.logger.Infof("%v validating blocks...", simplifyAddress(c.address))
+	c.logger.Infof("%v validating blocks...", log.Simplify(c.address))
 	go func() {
 		for {
 			// validate new block
@@ -84,7 +85,7 @@ func (c *Validator) startValidating() {
 				return
 			}
 			c.logger.Infof("%v generated new block [%v]",
-				simplifyAddress(c.address), simplifyAddress(block.BlockHash))
+				log.Simplify(c.address), log.Simplify(block.BlockHash))
 
 			select {
 			case <-ctx.Done():
@@ -193,10 +194,10 @@ func verifyTransactions(stateCopy storage.Storage, validatorAddress string, txs 
 			return fmt.Errorf("can't get transaction hash: %v", err)
 		}
 		if err := verifyTransaction(stateCopy, tr); err != nil {
-			return fmt.Errorf("transaction %v verify failure: %v", simplifyAddress(hash), err)
+			return fmt.Errorf("transaction %v verify failure: %v", log.Simplify(hash), err)
 		}
 		if err := applyTransaction(stateCopy, validatorAddress, tr); err != nil {
-			return fmt.Errorf("transaction %v apply failure: %v", simplifyAddress(hash), err)
+			return fmt.Errorf("transaction %v apply failure: %v", log.Simplify(hash), err)
 		}
 	}
 	return nil

@@ -1,6 +1,10 @@
-package logger
+package log
 
-import "fmt"
+import (
+	"fmt"
+	"simple_chain/msg"
+	"strings"
+)
 
 const (
 	Info  = 2
@@ -9,6 +13,9 @@ const (
 
 	None = 0
 	All  = 255
+
+	// extra (not info)
+	Chain = 256
 )
 
 type Logger struct {
@@ -38,5 +45,22 @@ func (l Logger) Infof(format string, a ...interface{}) {
 func (l Logger) Debugf(format string, a ...interface{}) {
 	if l.types&Debug > 0 {
 		fmt.Printf(format+"\n", a...)
+	}
+}
+
+func (l Logger) Chain(address string, chain []msg.Block) {
+	if l.types&Chain > 0 {
+		var sb strings.Builder
+		sb.WriteString(Simplify(address))
+		sb.WriteString(" : ")
+		for i, block := range chain {
+			sb.WriteString("[")
+			sb.WriteString(Simplify(block.BlockHash))
+			sb.WriteString("]")
+			if i != len(chain)-1 {
+				sb.WriteString(" -> ")
+			}
+		}
+		fmt.Println(sb.String())
 	}
 }

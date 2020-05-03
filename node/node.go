@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"simple_chain/genesis"
-	"simple_chain/logger"
+	"simple_chain/log"
 	"simple_chain/msg"
 	"simple_chain/pool"
 	"simple_chain/storage"
@@ -22,7 +22,6 @@ const (
 	TransactionFee                = 10
 	TransactionSuccessBlocksDelta = 6
 	MessageSendTimeout            = time.Second * 3
-	SimplifiedAddressLen          = BlockDifficulty + 2
 )
 
 type connectedPeer struct {
@@ -48,7 +47,7 @@ type Node struct {
 
 	mxPeers  *sync.Mutex
 	mxBlocks *sync.Mutex
-	logger   logger.Logger
+	logger   log.Logger
 }
 
 func NewNode(genesis genesis.Genesis) (*Node, error) {
@@ -79,7 +78,7 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 
 		mxBlocks: &(sync.Mutex{}),
 		mxPeers:  &(sync.Mutex{}),
-		logger:   logger.New(logger.All),
+		logger:   log.New(log.Chain),
 	}, nil
 }
 
@@ -241,7 +240,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 		case message := <-peer.In:
 			broadcast, err := c.processMessage(ctx, peer, message)
 			if err != nil {
-				c.logger.Errorf("%v process peer error: %v", simplifyAddress(c.address), err)
+				c.logger.Errorf("%v process peer error: %v", log.Simplify(c.address), err)
 				continue
 			}
 			if broadcast {
@@ -297,7 +296,7 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 // processBlock - received block
 func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
 	c.logger.Infof("%v receive block [%v] from %v",
-		simplifyAddress(c.address), simplifyAddress(block.BlockHash), simplifyAddress(peer.Address))
+		log.Simplify(c.address), log.Simplify(block.BlockHash), log.Simplify(peer.Address))
 
 	if block.BlockNum > c.lastBlockNum+1 {
 		// if the block is out of turn
@@ -329,14 +328,14 @@ func (c *Node) processBlock(block msg.Block) error {
 		return fmt.Errorf("can't process block: %v", err)
 	}
 
-	c.logger.Infof("%v insert new block [%v]", simplifyAddress(c.address), simplifyAddress(block.BlockHash))
+	c.logger.Infof("%v insert new block [%v]", log.Simplify(c.address), log.Simplify(block.BlockHash))
 	return nil
 }
 
 func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {
 	if c.NodeAddress() == m.To && m.Error != nil {
-		c.logger.Infof("%v has no block with hash [%v]", simplifyAddress(peer.Address), simplifyAddress(m.BlockHash))
-		c.logger.Infof("%v revert block [%v]", simplifyAddress(c.NodeAddress()), simplifyAddress(c.lastBlockHash()))
+		c.logger.Infof("%v has no block with hash [%v]", log.Simplify(peer.Address), log.Simplify(m.BlockHash))
+		c.logger.Infof("%v revert block [%v]", log.Simplify(c.NodeAddress()), log.Simplify(c.lastBlockHash()))
 
 		if err := c.revertLastBlock(); err != nil {
 			return err
@@ -352,7 +351,7 @@ func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m 
 // send blocks to peer that requested
 func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req msg.BlocksRequest) error {
 	c.logger.Debugf("%v blocks request from %v, from block [%v]",
-		simplifyAddress(c.address), simplifyAddress(peer.Address), simplifyAddress(req.LastBlockHash))
+		log.Simplify(c.address), log.Simplify(peer.Address), log.Simplify(req.LastBlockHash))
 
 	if c.NodeAddress() == req.To {
 		fromBlock, err := c.GetBlockByHash(req.LastBlockHash)
@@ -367,7 +366,7 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 
 		for id := fromBlock.BlockNum + 1; id <= c.lastBlockNum; id++ {
 			c.logger.Infof("%v send block [%v] to %v",
-				simplifyAddress(c.address), simplifyAddress(c.blocks[id].BlockHash), simplifyAddress(peer.Address))
+				log.Simplify(c.address), log.Simplify(c.blocks[id].BlockHash), log.Simplify(peer.Address))
 			c.SendTo(peer, ctx, c.GetBlockByNumber(id))
 		}
 	}
@@ -377,7 +376,7 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 // get info from another peer
 func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.NodeInfoResp) error {
 	if c.totalDifficulty() < res.TotalDifficulty {
-		c.logger.Infof("%v connect to %v need sync", simplifyAddress(c.address), simplifyAddress(peer.Address))
+		c.logger.Infof("%v connect to %v need sync", log.Simplify(c.address), log.Simplify(peer.Address))
 		c.SendTo(peer, ctx, msg.BlocksRequest{
 			To:            peer.Address,
 			LastBlockHash: c.lastBlockHash(),
@@ -394,13 +393,6 @@ func PubKeyToAddress(key crypto.PublicKey) (string, error) {
 		return hex.EncodeToString(b[:]), nil
 	}
 	return "", errors.New("incorrect key")
-}
-
-func simplifyAddress(address string) string {
-	if len(address) < SimplifiedAddressLen {
-		return address
-	}
-	return address[:SimplifiedAddressLen]
 }
 
 func (c *Node) newTransaction(toAddress string, amount uint64) (msg.Transaction, error) {
@@ -542,6 +534,8 @@ func (c *Node) insertBlock(b msg.Block) error {
 
 	c.blocks = append(c.blocks, b)
 	c.lastBlockNum += 1
+
+	c.logger.Chain(c.NodeAddress(), c.blocks)
 	return nil
 }
 
@@ -590,6 +584,7 @@ func (c *Node) revertLastBlock() error {
 	c.blocks = c.blocks[:len(c.blocks)-1]
 	c.lastBlockNum--
 
+	c.logger.Chain(c.NodeAddress(), c.blocks)
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"reflect"
 	"simple_chain/genesis"
+	"simple_chain/log"
 	"simple_chain/msg"
 	"testing"
 	"time"
@@ -362,7 +363,7 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 	nd1, _ := NewNode(gen)
 	nd2, _ := NewNode(gen)
 
-	t.Logf("genesis block [%v]", simplifyAddress(gen.ToBlock().BlockHash))
+	t.Logf("genesis block [%v]", log.Simplify(gen.ToBlock().BlockHash))
 
 	// chain 1
 	vd1, _ := NewValidator(gen)
@@ -370,7 +371,7 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 		block, _ := vd1.newBlock()
 		_ = vd1.insertBlock(block)
 		_ = nd1.insertBlock(block)
-		t.Logf("nd1 insert block [%v]", simplifyAddress(block.BlockHash))
+		t.Logf("nd1 insert block [%v]", log.Simplify(block.BlockHash))
 	}
 
 	t.Logf("-->")
@@ -381,7 +382,7 @@ func TestNode_SyncDifferentTotalDifficulty(t *testing.T) {
 		block, _ := vd2.newBlock()
 		_ = vd2.insertBlock(block)
 		_ = nd2.insertBlock(block)
-		t.Logf("nd2 insert block [%v]", simplifyAddress(block.BlockHash))
+		t.Logf("nd2 insert block [%v]", log.Simplify(block.BlockHash))
 	}
 
 	_ = nd1.AddPeer(nd2)
@@ -428,7 +429,7 @@ func TestNode_SyncFullyConnected(t *testing.T) {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
 				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
 			}
 		}
 	}
@@ -460,7 +461,7 @@ func TestNode_SyncLinear(t *testing.T) {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
 				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
 			}
 		}
 	}
@@ -496,7 +497,7 @@ func TestNode_SyncRing(t *testing.T) {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
 				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
 			}
 		}
 	}
@@ -531,7 +532,7 @@ func TestNode_SyncStar(t *testing.T) {
 		for j, peer2 := range peers {
 			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
 				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-					simplifyAddress(peer1.NodeAddress()), simplifyAddress(peer2.NodeAddress()), peer1.state, peer2.state)
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
 			}
 		}
 	}
