@@ -13,6 +13,11 @@ type NodeInfoResp struct {
 	TotalDifficulty uint64
 }
 
+type BlockMessage struct {
+	Block
+	TotalDifficulty uint64
+}
+
 // Request for needed blocks
 type BlocksRequest struct {
 	To            string

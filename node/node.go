@@ -11,7 +11,6 @@ import (
 	"simple_chain/genesis"
 	"simple_chain/log"
 	"simple_chain/msg"
-	"simple_chain/pool"
 	"simple_chain/storage"
 	"sync"
 	"time"
@@ -38,8 +37,8 @@ type Node struct {
 	lastBlockNum uint64
 
 	//chain
-	blocks    []msg.Block
-	blockPool pool.BlockPool
+	blocks []msg.Block
+	// blockPool pool.BlockPool
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
@@ -67,11 +66,11 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 	state := storage.FromGenesis(genesis)
 
 	return &Node{
-		key:          key,
-		address:      address,
-		genesis:      genesis,
-		blocks:       []msg.Block{genesis.ToBlock()},
-		blockPool:    pool.NewBlockPool(),
+		key:     key,
+		address: address,
+		genesis: genesis,
+		blocks:  []msg.Block{genesis.ToBlock()},
+		// blockPool:    pool.NewBlockPool(),
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
@@ -248,8 +247,8 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 	switch m := message.Data.(type) {
 	case msg.Transaction:
 		return true, c.processTransaction(peer, m)
-	case msg.Block:
-		return !c.hasBlock(m), c.processBlockMessage(ctx, peer, m)
+	case msg.BlockMessage:
+		return !c.hasBlock(m.Block), c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
 		return m.To != c.NodeAddress(), c.processBlocksRequest(ctx, peer, m)
 	case msg.BlocksResponse:
@@ -288,26 +287,22 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 }
 
 // processBlock - received block
-func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, block msg.Block) error {
+func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, blockMsg msg.BlockMessage) error {
 	c.logger.Infof("%v receive block [%v] from %v",
-		log.Simplify(c.address), log.Simplify(block.BlockHash), log.Simplify(peer.Address))
-
-	if block.BlockNum > c.lastBlockNum+1 {
-		// if the block is out of turn
-		return c.blockPool.Insert(block)
-	}
+		log.Simplify(c.address), log.Simplify(blockMsg.BlockHash), log.Simplify(peer.Address))
 
 	// process block from message
-	if err := c.processBlock(block); err != nil {
-		return fmt.Errorf("can't process message: %v", err)
-	}
-	// check block pool for blocks
-	if c.blockPool.HasBlockNum(c.lastBlockNum + 1) {
-		block, err := c.blockPool.Pop(c.lastBlockNum + 1)
-		if err != nil {
-			return fmt.Errorf("can't process block pool: %v", err)
+	if err := c.processBlock(blockMsg.Block); err != nil {
+		// if td - request some blocks
+		if c.totalDifficulty() < blockMsg.TotalDifficulty {
+			c.SendTo(peer, ctx, msg.BlocksRequest{
+				To:            peer.Address,
+				LastBlockHash: c.lastBlockHash(),
+			})
+			return nil
+		} else {
+			return fmt.Errorf("can't process message: %v", err)
 		}
-		return c.processBlock(block)
 	}
 
 	return nil
@@ -364,7 +359,11 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 		for id := fromBlock.BlockNum + 1; id <= c.lastBlockNum; id++ {
 			c.logger.Infof("%v send block [%v] to %v",
 				log.Simplify(c.address), log.Simplify(c.blocks[id].BlockHash), log.Simplify(peer.Address))
-			c.SendTo(peer, ctx, c.getBlockByNumber(id))
+
+			c.SendTo(peer, ctx, msg.BlockMessage{
+				Block:           c.getBlockByNumber(id),
+				TotalDifficulty: c.totalDifficulty(),
+			})
 		}
 	}
 	return nil
@@ -572,6 +571,9 @@ func (c *Node) revertLastBlock() error {
 
 	if len(c.blocks) == 0 {
 		return errors.New("nothing to revert")
+	}
+	if len(c.blocks) == 1 {
+		return errors.New("genesis reverting")
 	}
 
 	c.state.RevertBlock()

@@ -9,13 +9,13 @@ import (
 
 type BlockPool struct {
 	alloc map[uint64][]msg.Block
-	mx    sync.Mutex
+	mx    *sync.Mutex
 }
 
 func NewBlockPool() BlockPool {
 	return BlockPool{
 		alloc: make(map[uint64][]msg.Block),
-		mx:    sync.Mutex{},
+		mx:    &sync.Mutex{},
 	}
 }
 

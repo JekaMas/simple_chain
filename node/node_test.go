@@ -329,6 +329,9 @@ func TestNode_SyncTwoNodes(t *testing.T) {
 	nd1, _ := NewNode(gen)
 	nd2, _ := NewNode(gen)
 
+	t.Logf("node1 %v", log.Simplify(nd1.NodeAddress()))
+	t.Logf("node2 %v", log.Simplify(nd2.NodeAddress()))
+
 	vd, _ := NewValidator(gen)
 	err := vd.AddTransaction(msg.Transaction{
 		From:   "one",
@@ -352,7 +355,7 @@ func TestNode_SyncTwoNodes(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	if len(nd2.blocks) != 2 {
-		t.Fatalf("no block was synced")
+		t.Fatalf("no blocks was synced")
 	}
 
 	if !reflect.DeepEqual(nd1.state, nd2.state) {
@@ -365,26 +368,28 @@ func TestNode_SyncTwoNodesWithDifferentTotalDifficulty(t *testing.T) {
 	nd1, _ := NewNode(gen)
 	nd2, _ := NewNode(gen)
 
-	t.Logf("genesis block [%v]", log.Simplify(gen.ToBlock().BlockHash))
+	// t.Logf("genesis block [%v]", log.Simplify(gen.ToBlock().BlockHash))
 
 	// chain 1
 	vd1, _ := NewValidator(gen)
+	vd1.logger = log.New()
 	for i := 0; i < 3; i++ {
 		block, _ := vd1.newBlock()
 		_ = vd1.insertBlock(block)
 		_ = nd1.insertBlock(block)
-		t.Logf("nd1 insert block [%v]", log.Simplify(block.BlockHash))
+		// t.Logf("nd1 insert block [%v]", log.Simplify(block.BlockHash))
 	}
 
-	t.Logf("-->")
+	// t.Logf("-->")
 
 	// chain 2
 	vd2, _ := NewValidator(gen)
+	vd2.logger = log.New()
 	for i := 0; i < 5; i++ {
 		block, _ := vd2.newBlock()
 		_ = vd2.insertBlock(block)
 		_ = nd2.insertBlock(block)
-		t.Logf("nd2 insert block [%v]", log.Simplify(block.BlockHash))
+		// t.Logf("nd2 insert block [%v]", log.Simplify(block.BlockHash))
 	}
 
 	_ = nd1.AddPeer(nd2)

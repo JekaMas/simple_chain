@@ -30,6 +30,7 @@ func FromGenesis(genesis genesis.Genesis) *MapStorage {
 	storage := NewMap()
 	block := genesis.ToBlock()
 
+	storage.PutBlockToHistory(0)
 	for _, tx := range block.Transactions {
 		_ = storage.Put(tx.To, tx.Amount)
 	}

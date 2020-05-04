@@ -79,7 +79,10 @@ func TestValidator_RewardAfterBlockReturns(t *testing.T) {
 	}
 	vd.Broadcast(context.Background(), msg.Message{
 		From: vd.NodeAddress(),
-		Data: block,
+		Data: msg.BlockMessage{
+			Block:           block,
+			TotalDifficulty: vd.totalDifficulty() + 1,
+		},
 	})
 
 	time.Sleep(time.Millisecond * 1)
