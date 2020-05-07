@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"simple_chain/msg"
+	"strconv"
 	"strings"
 )
 
@@ -54,6 +55,8 @@ func (l Logger) Chain(address string, chain []msg.Block) {
 		for i, block := range chain {
 			sb.WriteString("[")
 			sb.WriteString(Simplify(block.BlockHash))
+			sb.WriteString(",")
+			sb.WriteString(strconv.Itoa(len(block.Transactions)))
 			sb.WriteString("]")
 			if i != len(chain)-1 {
 				sb.WriteString(" -> ")

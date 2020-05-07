@@ -15,7 +15,7 @@ import (
 const (
 	TransactionsPerBlock = 10
 	BlockReward          = 1000
-	BlockDifficulty      = 3
+	BlockDifficulty      = 1
 )
 
 type Validator struct {
@@ -40,11 +40,6 @@ func NewValidatorWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Vali
 
 	// return new validator
 	return &Validator{Node: *nd}, nil
-}
-
-// AddTransaction - add verified ! transaction to transaction pool (for validator)
-func (c *Validator) AddTransaction(tr msg.Transaction) error {
-	return c.txsPool.Insert(tr)
 }
 
 func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, msg msg.BlockMessage) error {

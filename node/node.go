@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/rand"
 	"simple_chain/genesis"
 	"simple_chain/log"
 	"simple_chain/msg"
@@ -21,7 +22,9 @@ const (
 	MessagesBusLen                = 100
 	TransactionFee                = 10
 	TransactionSuccessBlocksDelta = 6
+	MaxTransactionAmount          = 1_000_000
 	MessageSendTimeout            = time.Second * 3
+	DebugTransactions             = true
 )
 
 type connectedPeer struct {
@@ -244,6 +247,14 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 				c.Broadcast(ctx, message)
 			}
 		}
+
+		if DebugTransactions {
+			tr, err := c.debugTransaction()
+			if err == nil {
+				_ = c.txsPool.Insert(tr)
+				c.Broadcast(ctx, msg.Message{From: c.NodeAddress(), Data: tr})
+			}
+		}
 	}
 }
 
@@ -265,6 +276,11 @@ func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message m
 
 // processTransaction - received transaction
 func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error {
+	// check amount
+	if tr.Amount > MaxTransactionAmount {
+		return errors.New("transaction amount is too large")
+	}
+
 	// check public key
 	addr, err := PubKeyToAddress(tr.PubKey)
 	if err != nil {
@@ -273,6 +289,7 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 	if addr != peer.Address {
 		return errors.New("transaction key not belong to address")
 	}
+
 	// check signature
 	sig := tr.Signature
 	tr.Signature = nil
@@ -469,6 +486,21 @@ func (c *Node) newTransaction(toAddress string, amount uint64) (msg.Transaction,
 		PubKey: c.key.Public().(ed25519.PublicKey),
 	}
 	return c.SignTransaction(tr)
+}
+
+func (c *Node) debugTransaction() (msg.Transaction, error) {
+	c.state.Lock()
+	defer c.state.Unlock()
+
+	keys := make([]string, 0)
+	for k := range c.peers {
+		keys = append(keys, k)
+	}
+
+	randKey := keys[rand.Intn(len(keys))]
+	randPeer := c.peers[randKey]
+
+	return c.newTransaction(randPeer.Address, 1)
 }
 
 /*
