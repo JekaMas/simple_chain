@@ -132,14 +132,17 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	// add reward transaction
 	txs = append([]msg.Transaction{c.coinbaseTransaction()}, txs...)
 
-	prevBlockHash := c.getBlockByNumber(c.lastBlockNum).BlockHash
+	prevBlock, err := c.getBlockByNumber(c.lastBlockNum)
+	if err != nil {
+		return msg.Block{}, fmt.Errorf("can't generate block: %v", err)
+	}
 
 	block := msg.Block{
 		BlockNum:      c.lastBlockNum + 1,
 		Nonce:         0,
 		Timestamp:     time.Now().UnixNano(),
 		Transactions:  txs,
-		PrevBlockHash: prevBlockHash,
+		PrevBlockHash: prevBlock.BlockHash,
 		StateHash:     "",  // fill later
 		BlockHash:     "",  // fill later
 		Signature:     nil, // fill later

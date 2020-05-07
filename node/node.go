@@ -77,7 +77,7 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 
 		mxBlocks: &(sync.Mutex{}),
 		mxPeers:  &(sync.Mutex{}),
-		logger:   log.New(log.Chain),
+		logger:   log.New(log.Debug + log.Chain),
 	}, nil
 }
 
@@ -164,8 +164,11 @@ func (c *Node) AddTransaction(tr msg.Transaction) error {
 	return nil
 }
 
-func (c *Node) getBlockByNumber(ID uint64) msg.Block {
-	return c.blocks[ID]
+func (c *Node) getBlockByNumber(ID uint64) (msg.Block, error) {
+	if ID >= uint64(len(c.blocks)) {
+		return msg.Block{}, errors.New("block id is too big")
+	}
+	return c.blocks[ID], nil
 }
 
 func (c *Node) getBlockByHash(hash string) (msg.Block, error) {
@@ -212,12 +215,11 @@ func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 }
 
 func (c *Node) SendMessageTo(cp connectedPeer, ctx context.Context, msg msg.Message) {
-	cp.Out <- msg
-	//select {
-	//case :
-	//case <-ctx.Done():
-	//case <-time.After(MessageSendTimeout):
-	//}
+	select {
+	case cp.Out <- msg:
+	case <-ctx.Done():
+	case <-time.After(MessageSendTimeout):
+	}
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
@@ -288,30 +290,39 @@ func (c *Node) processTransaction(peer connectedPeer, tr msg.Transaction) error 
 
 // processBlock - received block
 func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, blockMsg msg.BlockMessage) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	c.logger.Infof("%v receive block [%v] from %v",
 		log.Simplify(c.address), log.Simplify(blockMsg.BlockHash), log.Simplify(peer.Address))
 
+	// check for reorgs and greater total difficulty
+	if c.isReorg(blockMsg) {
+		c.logger.Debugf("%v reorg was found with block [%v]",
+			log.Simplify(c.NodeAddress()), log.Simplify(blockMsg.BlockHash))
+		// revert `incorrect` block
+		if err := c.revertLastBlock(); err != nil {
+			c.logger.Errorf("can't revert block: %v", err)
+		}
+		// if td - request some blocks
+		c.SendTo(peer, ctx, msg.BlocksRequest{
+			To:            peer.Address,
+			LastBlockHash: c.lastBlockHash(),
+		})
+		return nil
+	}
+
 	// process block from message
 	if err := c.processBlock(blockMsg.Block); err != nil {
-		// if td - request some blocks
-		if c.totalDifficulty() < blockMsg.TotalDifficulty {
-			c.SendTo(peer, ctx, msg.BlocksRequest{
-				To:            peer.Address,
-				LastBlockHash: c.lastBlockHash(),
-			})
-			return nil
-		} else {
-			return fmt.Errorf("can't process message: %v", err)
-		}
+		c.logger.Errorf("%v can't process block [%v] from %v: %v",
+			log.Simplify(c.address), log.Simplify(blockMsg.BlockHash), log.Simplify(peer.Address), err)
+		return fmt.Errorf("can't process message: %v", err)
 	}
 
 	return nil
 }
 
 func (c *Node) processBlock(block msg.Block) error {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
 	if err := c.verifyBlock(block); err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
@@ -325,13 +336,17 @@ func (c *Node) processBlock(block msg.Block) error {
 }
 
 func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	if c.NodeAddress() == m.To && m.Error != nil {
 		c.logger.Infof("%v has no block with hash [%v]", log.Simplify(peer.Address), log.Simplify(m.BlockHash))
 		c.logger.Infof("%v revert block [%v]", log.Simplify(c.NodeAddress()), log.Simplify(c.lastBlockHash()))
 
 		if err := c.revertLastBlock(); err != nil {
-			return err
+			c.logger.Errorf("can't revert block: %v", err)
 		}
+
 		c.SendTo(peer, ctx, msg.BlocksRequest{
 			To:            peer.Address,
 			LastBlockHash: c.lastBlockHash(),
@@ -342,7 +357,7 @@ func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m 
 
 // send blocks to peer that requested
 func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req msg.BlocksRequest) error {
-	c.logger.Debugf("%v blocks request from %v, from block [%v]",
+	c.logger.Infof("%v blocks request from %v, from block [%v]",
 		log.Simplify(c.address), log.Simplify(peer.Address), log.Simplify(req.LastBlockHash))
 
 	if c.NodeAddress() == req.To {
@@ -360,8 +375,13 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 			c.logger.Infof("%v send block [%v] to %v",
 				log.Simplify(c.address), log.Simplify(c.blocks[id].BlockHash), log.Simplify(peer.Address))
 
+			block, err := c.getBlockByNumber(id)
+			if err != nil {
+				return fmt.Errorf("can't get block by ID: %v", err)
+			}
+
 			c.SendTo(peer, ctx, msg.BlockMessage{
-				Block:           c.getBlockByNumber(id),
+				Block:           block,
 				TotalDifficulty: c.totalDifficulty(),
 			})
 		}
@@ -371,6 +391,9 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 
 // get info from another peer
 func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.NodeInfoResp) error {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	if c.totalDifficulty() < res.TotalDifficulty {
 		c.logger.Infof("%v connect to %v need sync", log.Simplify(c.address), log.Simplify(peer.Address))
 		c.SendTo(peer, ctx, msg.BlocksRequest{
@@ -379,6 +402,19 @@ func (c *Node) processNodeInfo(ctx context.Context, peer connectedPeer, res msg.
 		})
 	}
 	return nil
+}
+
+func (c *Node) isReorg(msg msg.BlockMessage) bool {
+
+	prevBlock, err := c.getBlockByNumber(c.lastBlockNum - 1)
+
+	diffPrev := (msg.BlockNum == c.lastBlockNum-1) && err == nil && prevBlock.BlockHash != msg.BlockHash
+	diffLast := (msg.BlockNum == c.lastBlockNum) && (c.lastBlockHash() != msg.BlockHash)
+	diffNext := (msg.BlockNum == c.lastBlockNum+1) && (c.lastBlockHash() != msg.PrevBlockHash)
+
+	diffTd := c.totalDifficulty() < msg.TotalDifficulty
+
+	return diffTd && (diffPrev || diffLast || diffNext)
 }
 
 /* -- Common -------------------------------------------------------------------------------------------------------- */
@@ -417,7 +453,11 @@ func (c *Node) verifyBlock(block msg.Block) error {
 	}
 
 	// check parent hash
-	prevBlockHash := c.getBlockByNumber(block.BlockNum - 1).BlockHash
+	prevBlock, err := c.getBlockByNumber(block.BlockNum - 1)
+	if err != nil {
+		return fmt.Errorf("no previous block")
+	}
+	prevBlockHash := prevBlock.BlockHash
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
 	}
@@ -558,17 +598,11 @@ func (c *Node) totalDifficulty() uint64 {
 }
 
 func (c *Node) lastBlockHash() string {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
 	lastBlock := c.blocks[len(c.blocks)-1]
 	return lastBlock.BlockHash
 }
 
 func (c *Node) revertLastBlock() error {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
 	if len(c.blocks) == 0 {
 		return errors.New("nothing to revert")
 	}
@@ -585,6 +619,9 @@ func (c *Node) revertLastBlock() error {
 }
 
 func (c *Node) hasBlock(m msg.Block) bool {
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
+
 	hash, err := m.Hash()
 	if err != nil {
 		return false
