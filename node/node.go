@@ -11,6 +11,7 @@ import (
 	"simple_chain/genesis"
 	"simple_chain/log"
 	"simple_chain/msg"
+	"simple_chain/pool"
 	"simple_chain/storage"
 	"sync"
 	"time"
@@ -37,8 +38,8 @@ type Node struct {
 	lastBlockNum uint64
 
 	//chain
-	blocks []msg.Block
-	// blockPool pool.BlockPool
+	blocks    []msg.Block
+	blockPool pool.BlockPool
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
@@ -66,11 +67,11 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 	state := storage.FromGenesis(genesis)
 
 	return &Node{
-		key:     key,
-		address: address,
-		genesis: genesis,
-		blocks:  []msg.Block{genesis.ToBlock()},
-		// blockPool:    pool.NewBlockPool(),
+		key:          key,
+		address:      address,
+		genesis:      genesis,
+		blocks:       []msg.Block{genesis.ToBlock()},
+		blockPool:    pool.NewBlockPool(),
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
@@ -296,6 +297,11 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 	c.logger.Infof("%v receive block [%v] from %v",
 		log.Simplify(c.address), log.Simplify(blockMsg.BlockHash), log.Simplify(peer.Address))
 
+	// check if block num is too high
+	if blockMsg.BlockNum > c.lastBlockNum+1 {
+		return c.blockPool.Insert(blockMsg.Block)
+	}
+
 	// check for reorgs and greater total difficulty
 	if c.isReorg(blockMsg) {
 		c.logger.Debugf("%v reorg was found with block [%v]",
@@ -319,7 +325,7 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 		return fmt.Errorf("can't process message: %v", err)
 	}
 
-	return nil
+	return c.processBlockPool()
 }
 
 func (c *Node) processBlock(block msg.Block) error {
@@ -333,6 +339,32 @@ func (c *Node) processBlock(block msg.Block) error {
 
 	c.logger.Infof("%v insert new block [%v]", log.Simplify(c.address), log.Simplify(block.BlockHash))
 	return nil
+}
+
+func (c *Node) processBlockPool() error {
+	index := c.lastBlockNum
+	for {
+		// next index
+		index++
+		inserted := false
+		// get block slice if pool contains
+		blocks, err := c.blockPool.GetBlocks(index)
+		if err != nil {
+			// no blocks - nothing to do
+			return nil
+		}
+		// for each block try to insert
+		for _, block := range blocks {
+			if err := c.processBlock(block); err == nil {
+				inserted = true
+				break
+			}
+		}
+		// if nothing inserted - return
+		if !inserted {
+			return nil
+		}
+	}
 }
 
 func (c *Node) processBlocksResponse(ctx context.Context, peer connectedPeer, m msg.BlocksResponse) error {

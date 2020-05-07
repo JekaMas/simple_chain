@@ -44,22 +44,33 @@ func (p *BlockPool) Insert(b msg.Block) error {
 	return nil
 }
 
-func (p *BlockPool) Pop(blockNum uint64) (msg.Block, error) {
+func (p *BlockPool) GetBlocks(blockNum uint64) ([]msg.Block, error) {
 	p.mx.Lock()
 	defer p.mx.Unlock()
 
 	pool, ok := p.alloc[blockNum]
 	if !ok {
-		return msg.Block{}, errors.New("no such block")
+		return nil, errors.New("no blocks yet")
 	}
-	if len(pool) == 0 {
-		return msg.Block{}, errors.New("no blocks")
-	}
-
-	block := pool[len(pool)-1] // fixme get last one
-	p.alloc[blockNum] = pool[:len(pool)-1]
-	return block, nil
+	return pool, nil
 }
+
+//func (p *BlockPool) Pop(blockNum uint64) (msg.Block, error) {
+//	p.mx.Lock()
+//	defer p.mx.Unlock()
+//
+//	pool, ok := p.alloc[blockNum]
+//	if !ok {
+//		return msg.Block{}, errors.New("no such block")
+//	}
+//	if len(pool) == 0 {
+//		return msg.Block{}, errors.New("no blocks")
+//	}
+//
+//	block := pool[len(pool)-1] // fixme get last one
+//	p.alloc[blockNum] = pool[:len(pool)-1]
+//	return block, nil
+//}
 
 func (p *BlockPool) HasBlockNum(blockNum uint64) bool {
 	p.mx.Lock()
