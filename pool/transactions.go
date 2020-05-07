@@ -18,13 +18,14 @@ type pooledTransaction struct {
 type TransactionPool struct {
 	alloc       map[string]pooledTransaction //transaction hash - > transaction
 	maxLifeTime int64
-	mx          sync.Mutex
+	mx          *sync.Mutex
 }
 
 func NewTransactionPool() TransactionPool {
 	return TransactionPool{
 		alloc:       make(map[string]pooledTransaction),
 		maxLifeTime: MaxLifeTime,
+		mx:          &sync.Mutex{},
 	}
 }
 
@@ -57,6 +58,19 @@ func (p *TransactionPool) Peek(maxCount uint64) []msg.Transaction {
 		}
 	}
 	return txs
+}
+
+func (p *TransactionPool) Has(tr msg.Transaction) bool {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
+	hash, err := tr.Hash()
+	if err != nil {
+		return false
+	}
+
+	_, ok := p.alloc[hash]
+	return ok
 }
 
 func (p *TransactionPool) Delete(tr msg.Transaction) {

@@ -8,7 +8,6 @@ import (
 	"simple_chain/genesis"
 	"simple_chain/log"
 	"simple_chain/msg"
-	"simple_chain/pool"
 	"simple_chain/storage"
 	"time"
 )
@@ -21,7 +20,6 @@ const (
 
 type Validator struct {
 	Node
-	transactionPool  pool.TransactionPool
 	validatingCancel context.CancelFunc
 }
 
@@ -41,15 +39,12 @@ func NewValidatorWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Vali
 	}
 
 	// return new validator
-	return &Validator{
-		Node:            *nd,
-		transactionPool: pool.NewTransactionPool(),
-	}, nil
+	return &Validator{Node: *nd}, nil
 }
 
 // AddTransaction - add verified ! transaction to transaction pool (for validator)
 func (c *Validator) AddTransaction(tr msg.Transaction) error {
-	return c.transactionPool.Insert(tr)
+	return c.txsPool.Insert(tr)
 }
 
 func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer, msg msg.BlockMessage) error {
@@ -61,7 +56,7 @@ func (c *Validator) processBlockMessage(ctx context.Context, peer connectedPeer,
 	needStart := c.stopValidating() == nil
 	// remove transactions from pool
 	for _, tr := range msg.Transactions {
-		c.transactionPool.Delete(tr)
+		c.txsPool.Delete(tr)
 	}
 	// start if possible
 	if needStart {
@@ -124,7 +119,7 @@ func (c *Validator) stopValidating() error {
 }
 
 func (c *Validator) newBlock() (msg.Block, error) {
-	txs := c.transactionPool.Peek(TransactionsPerBlock)
+	txs := c.txsPool.Peek(TransactionsPerBlock)
 	err := verifyTransactions(c.state.Copy(), c.NodeAddress(), txs)
 	if err != nil {
 		return msg.Block{}, fmt.Errorf("can't varify transactions: %v", err)
@@ -162,7 +157,7 @@ func (c *Validator) newBlock() (msg.Block, error) {
 		if err != nil {
 			return msg.Block{}, err
 		}
-		c.transactionPool.Delete(tr)
+		c.txsPool.Delete(tr)
 	}
 	err = applyCoinbaseTransaction(stateCopy, block.Transactions[0])
 	if err != nil {

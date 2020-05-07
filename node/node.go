@@ -40,6 +40,7 @@ type Node struct {
 	//chain
 	blocks    []msg.Block
 	blockPool pool.BlockPool
+	txsPool   pool.TransactionPool
 	//peer address -> peer info
 	peers map[string]connectedPeer
 	//peer address -> fund
@@ -72,6 +73,7 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 		genesis:      genesis,
 		blocks:       []msg.Block{genesis.ToBlock()},
 		blockPool:    pool.NewBlockPool(),
+		txsPool:      pool.NewTransactionPool(),
 		lastBlockNum: 0,
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
@@ -159,10 +161,9 @@ func (c *Node) GetBalance(account string) (uint64, error) {
 	return fund, nil
 }
 
-// AddTransaction - add verified ! transaction to transaction pool (for validator)
+// AddTransaction - add verified ! transaction to transaction pool
 func (c *Node) AddTransaction(tr msg.Transaction) error {
-	// todo add to transaction pool for node too
-	return nil
+	return c.txsPool.Insert(tr)
 }
 
 func (c *Node) getBlockByNumber(ID uint64) (msg.Block, error) {
@@ -249,7 +250,7 @@ func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
 func (c *Node) processMessage(ctx context.Context, peer connectedPeer, message msg.Message) (bool, error) {
 	switch m := message.Data.(type) {
 	case msg.Transaction:
-		return true, c.processTransaction(peer, m)
+		return !c.txsPool.Has(m), c.processTransaction(peer, m)
 	case msg.BlockMessage:
 		return !c.hasBlock(m.Block), c.processBlockMessage(ctx, peer, m)
 	case msg.BlocksRequest:
