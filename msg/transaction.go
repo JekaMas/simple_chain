@@ -12,6 +12,7 @@ type Transaction struct {
 	To        string
 	Amount    uint64
 	Fee       uint64
+	Timestamp int64
 	PubKey    ed25519.PublicKey
 	Signature []byte `json:"-"`
 }

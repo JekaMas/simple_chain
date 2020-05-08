@@ -479,11 +479,12 @@ func PubKeyToAddress(key crypto.PublicKey) (string, error) {
 
 func (c *Node) newTransaction(toAddress string, amount uint64) (msg.Transaction, error) {
 	tr := msg.Transaction{
-		From:   c.address,
-		To:     toAddress,
-		Amount: amount,
-		Fee:    TransactionFee,
-		PubKey: c.key.Public().(ed25519.PublicKey),
+		From:      c.address,
+		To:        toAddress,
+		Amount:    amount,
+		Fee:       TransactionFee,
+		Timestamp: time.Now().UnixNano(),
+		PubKey:    c.key.Public().(ed25519.PublicKey),
 	}
 	return c.SignTransaction(tr)
 }
@@ -496,7 +497,7 @@ func (c *Node) debugTransaction() (msg.Transaction, error) {
 	for k := range c.peers {
 		keys = append(keys, k)
 	}
-
+	// send to random peer
 	randKey := keys[rand.Intn(len(keys))]
 	randPeer := c.peers[randKey]
 

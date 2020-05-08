@@ -160,7 +160,7 @@ func TestNode_SyncOneNodeOneValidator(t *testing.T) {
 }
 
 func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
-	peers, validators, _ := makeSomePeers(2, 1, uint64(100000))
+	peers, _, validators := makeSomePeers(2, 1, uint64(100000))
 
 	// fully connected
 	for i := 0; i < len(peers); i++ {
@@ -187,7 +187,7 @@ func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
 }
 
 func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
-	peers, validators, _ := makeSomePeers(2, 2, uint64(100000))
+	peers, _, validators := makeSomePeers(2, 2, uint64(100000))
 
 	// fully connected
 	for i := 0; i < len(peers); i++ {
@@ -214,7 +214,7 @@ func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
 }
 
 func TestNode_SyncFullyConnected(t *testing.T) {
-	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+	peers, _, validators := makeSomePeers(5, 3, uint64(100000))
 
 	// fully connected
 	for i := 0; i < len(peers); i++ {
@@ -241,7 +241,7 @@ func TestNode_SyncFullyConnected(t *testing.T) {
 }
 
 func TestNode_SyncLinear(t *testing.T) {
-	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+	peers, _, validators := makeSomePeers(5, 3, uint64(100000))
 
 	// linear
 	for i := 1; i < len(peers); i++ {
@@ -266,7 +266,7 @@ func TestNode_SyncLinear(t *testing.T) {
 }
 
 func TestNode_SyncRing(t *testing.T) {
-	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+	peers, _, validators := makeSomePeers(5, 3, uint64(100000))
 
 	// ring
 	for i := 1; i < len(peers); i++ {
@@ -296,7 +296,7 @@ func TestNode_SyncRing(t *testing.T) {
 }
 
 func TestNode_SyncStar(t *testing.T) {
-	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
+	peers, _, validators := makeSomePeers(5, 3, uint64(100000))
 
 	// star
 	centerIndex := 2
@@ -326,7 +326,7 @@ func TestNode_SyncStar(t *testing.T) {
 /* --- Utils -------------------------------------------------------------------------------------------------------- */
 
 // makeSomePeers - return (peers, validators, nodes), where peers = validators + nodes
-func makeSomePeers(nNodes uint64, nVals uint64, initBalance uint64) ([]*Node, []*Validator, []*Node) {
+func makeSomePeers(nNodes, nVals, initBalance uint64) ([]*Node, []*Node, []*Validator) {
 	peers := make([]*Node, nNodes+nVals)
 	nodes := make([]*Node, nNodes)
 	vals := make([]*Validator, nVals)
@@ -354,7 +354,7 @@ func makeSomePeers(nNodes uint64, nVals uint64, initBalance uint64) ([]*Node, []
 		}
 	}
 
-	return peers, vals, nodes
+	return peers, nodes, vals
 }
 
 func assertPeersStatesSame(t *testing.T, peers []*Node) {

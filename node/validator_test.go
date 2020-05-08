@@ -158,3 +158,30 @@ func TestValidator_LeadingZeros(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_BlockWithTransactions(t *testing.T) {
+	_, nds, vds := makeSomePeers(1, 1, 10000)
+	nd, vd := nds[0], vds[0]
+
+	for i := 0; i < 3; i++ {
+		tr, err := nd.newTransaction(vd.NodeAddress(), 100)
+		if err != nil {
+			t.Fatalf("can't create transaction: %v", err)
+		}
+		err = vd.AddTransaction(tr)
+		if err != nil {
+			t.Fatalf("can't add transaction: %v", err)
+		}
+	}
+	t.Logf("transactions in txsPool: %v", vd.txsPool.Len())
+
+	block, err := vd.newBlock()
+	if err != nil {
+		t.Fatalf("can't generate block: %v", err)
+	}
+
+	t.Logf("transactions in block: %v", len(block.Transactions))
+	if len(block.Transactions) <= 1 {
+		t.Fatalf("not enough transactions in block")
+	}
+}

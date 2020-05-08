@@ -73,6 +73,10 @@ func (p *TransactionPool) Has(tr msg.Transaction) bool {
 	return ok
 }
 
+func (p *TransactionPool) Len() int {
+	return len(p.alloc)
+}
+
 func (p *TransactionPool) Delete(tr msg.Transaction) {
 	p.mx.Lock()
 	defer p.mx.Unlock()
