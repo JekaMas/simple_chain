@@ -3,8 +3,9 @@ package pool
 import (
 	"errors"
 	"fmt"
-	"simple_chain/msg"
 	"sync"
+
+	"../msg"
 )
 
 type BlockPool struct {

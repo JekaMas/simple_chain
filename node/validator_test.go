@@ -2,10 +2,11 @@ package node
 
 import (
 	"context"
-	"simple_chain/genesis"
-	"simple_chain/msg"
 	"testing"
 	"time"
+
+	"../genesis"
+	"../msg"
 )
 
 func TestValidator_Mining(t *testing.T) {
@@ -37,12 +38,15 @@ func TestValidator_Mining(t *testing.T) {
 		}
 	}()
 
-	vd.mxBlocks.Lock()
-	if len(vd.blocks) < 2 {
+	// todo lock без unlock
+	if vd.Blocks() < 2 {
 		t.Fatalf("no blocks was validated")
 	}
-	if leadingZeros(vd.blocks[vd.lastBlockNum].BlockHash) != BlockDifficulty {
-		t.Fatalf("wrong block hash difficulty")
+	if leadingZeros(vd.blocks[vd.LastBlockNum()].BlockHash) != BlockDifficulty {
+		t.Fatalf("wrong block hash difficulty. Got %d(%d)",
+			leadingZeros(vd.blocks[vd.LastBlockNum()].BlockHash),
+			BlockDifficulty,
+		)
 	}
 }
 
@@ -85,10 +89,10 @@ func TestValidator_RewardAfterBlockReturns(t *testing.T) {
 		},
 	})
 
-	time.Sleep(time.Millisecond * 1)
+	time.Sleep(time.Millisecond * 10)
 
-	if len(vd.blocks) != 2 {
-		t.Fatalf("block was not received: len=%v, want=%v", len(vd.blocks), 2)
+	if vd.Blocks() != 2 {
+		t.Fatalf("block was not received: len=%v, want=%v", vd.Blocks(), 2)
 	}
 	v, _ = vd.GetBalance(vd.NodeAddress())
 	if v != BlockReward+20 {

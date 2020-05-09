@@ -19,6 +19,7 @@ func TestGenesis_BlockSameWithTimeDelay(t *testing.T) {
 		t.Fatalf("genesis blocks not equal")
 	}
 
+	// todo: лучше просто сравнить, а не выводить в логи
 	t.Logf("hash1: %v", block1.BlockHash)
 	t.Logf("hash2: %v", block2.BlockHash)
 }

@@ -3,9 +3,10 @@ package storage
 import (
 	"errors"
 	"fmt"
-	"simple_chain/encode"
-	"simple_chain/genesis"
 	"sync"
+
+	"../encode"
+	"../genesis"
 )
 
 type operation struct {
@@ -39,6 +40,8 @@ func FromGenesis(genesis genesis.Genesis) *MapStorage {
 }
 
 func (m *MapStorage) Get(key string) (uint64, error) {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
 	data, ok := m.Alloc[key]
 	if !ok {
 		return 0, errors.New("account not found")
@@ -47,8 +50,8 @@ func (m *MapStorage) Get(key string) (uint64, error) {
 }
 
 func (m *MapStorage) Copy() Storage {
-	m.Lock()
-	defer m.Unlock()
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
 
 	alloc := make(map[string]uint64)
 	for key, value := range m.Alloc {
@@ -65,15 +68,24 @@ func (m *MapStorage) Copy() Storage {
 }
 
 func (m *MapStorage) PutOrAdd(key string, data uint64) error {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+
 	_, ok := m.Alloc[key]
 	if ok {
-		return m.Add(key, data)
-	} else {
-		return m.Put(key, data)
+		return m.add(key, data)
 	}
+
+	return m.put(key, data)
 }
 
 func (m *MapStorage) Put(key string, data uint64) error {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+	return m.put(key, data)
+}
+
+func (m *MapStorage) put(key string, data uint64) error {
 	_, ok := m.Alloc[key]
 	if ok {
 		return fmt.Errorf("account '%v' already exists", key)
@@ -85,6 +97,12 @@ func (m *MapStorage) Put(key string, data uint64) error {
 }
 
 func (m *MapStorage) Add(key string, amount uint64) error {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+	return m.add(key, amount)
+}
+
+func (m *MapStorage) add(key string, amount uint64) error {
 	fund, ok := m.Alloc[key]
 	if !ok {
 		return fmt.Errorf("no such account: %v", key)
@@ -96,6 +114,12 @@ func (m *MapStorage) Add(key string, amount uint64) error {
 }
 
 func (m *MapStorage) Sub(key string, amount uint64) error {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+	return m.sub(key, amount)
+}
+
+func (m *MapStorage) sub(key string, amount uint64) error {
 	fund, ok := m.Alloc[key]
 	if !ok {
 		return errors.New("no such account")
@@ -110,10 +134,16 @@ func (m *MapStorage) Sub(key string, amount uint64) error {
 }
 
 func (m *MapStorage) PutBlockToHistory(num uint64) {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+
 	m.History = append(m.History, operation{"Block", "", num})
 }
 
 func (m *MapStorage) RevertBlock() {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+
 	for {
 		op := m.revertOperation()
 		if op.name == "Block" {
@@ -140,20 +170,17 @@ func (m *MapStorage) revertOperation() operation {
 }
 
 func (m *MapStorage) Hash() (string, error) {
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
+
 	return encode.HashAlloc(m.Alloc)
 }
 
 func (m *MapStorage) String() string {
-	m.Lock()
-	defer m.Unlock()
+	m.mxAlloc.Lock()
+	defer m.mxAlloc.Unlock()
 
 	return fmt.Sprint(m.Alloc)
 }
 
-func (m *MapStorage) Lock() {
-	m.mxAlloc.Lock()
-}
-
-func (m *MapStorage) Unlock() {
-	m.mxAlloc.Unlock()
-}
+// todo: это нехорошее API, если оно мьютекс предоставляет во внешний мир

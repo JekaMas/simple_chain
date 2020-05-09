@@ -1,10 +1,11 @@
 package pool
 
 import (
-	"simple_chain/msg"
 	"sync"
 	"testing"
 	"time"
+
+	"../msg"
 )
 
 func TestTransactionPool_Pop(t *testing.T) {

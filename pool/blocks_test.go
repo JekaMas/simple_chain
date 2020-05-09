@@ -2,9 +2,10 @@ package pool
 
 import (
 	"reflect"
-	"simple_chain/msg"
 	"sync"
 	"testing"
+
+	"../msg"
 )
 
 func TestBlockPool_InsertDifferent(t *testing.T) {

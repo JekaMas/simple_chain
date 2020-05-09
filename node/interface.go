@@ -2,7 +2,8 @@ package node
 
 import (
 	"crypto"
-	"simple_chain/msg"
+
+	"../msg"
 )
 
 type Blockchain interface {
@@ -13,17 +14,18 @@ type Blockchain interface {
 }
 
 type PublicAPI interface {
-	//network
+	// network
 	AddPeer(Blockchain) error
 	RemovePeer(Blockchain) error
 
-	//for clients
+	// for clients
 	GetBalance(account string) (uint64, error)
-	//add to transaction pool
+	// add to transaction pool
 	AddTransaction(transaction msg.Transaction) error
 	SignTransaction(transaction msg.Transaction) (msg.Transaction, error)
 
-	//sync
-	getBlockByNumber(ID uint64) msg.Block
+	// sync
+	// todo: в чем смысл приватных методов в интерфейсе?
+	//getBlockByNumber(ID uint64) msg.Block
 	NodeInfo() msg.NodeInfoResp
 }

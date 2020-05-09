@@ -3,12 +3,14 @@ package node
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"reflect"
-	"simple_chain/genesis"
-	"simple_chain/log"
-	"simple_chain/msg"
 	"testing"
 	"time"
+
+	"../genesis"
+	"../log"
+	"../msg"
 )
 
 func TestNode_InsertBlockSuccess(t *testing.T) {
@@ -37,15 +39,16 @@ func TestNode_InsertBlockSuccess(t *testing.T) {
 		t.Fatalf("insert block: %v", err)
 	}
 
-	if v, _ := nd.state.Get("one"); v != 9 {
+	ndState := nd.state.Copy()
+	if v, _ := ndState.Get("one"); v != 9 {
 		t.Fatalf("wrong 'one' state: get=%v want=%v'", v, 9)
 	}
 
-	if v, _ := nd.state.Get("two"); v != 40 {
+	if v, _ := ndState.Get("two"); v != 40 {
 		t.Fatalf("wrong 'two' state: get=%v want=%v'", v, 40)
 	}
 
-	if v, _ := nd.state.Get(vd.NodeAddress()); v != BlockReward+1 {
+	if v, _ := ndState.Get(vd.NodeAddress()); v != BlockReward+1 {
 		t.Fatalf("wrong 'val' state: get=%v want=%v'", v, BlockReward+1)
 	}
 }
@@ -68,19 +71,22 @@ func TestNode_ApplyTransactionSuccess(t *testing.T) {
 		Fee:    1,
 	}
 
-	if err := applyTransaction(nd.state, vd.NodeAddress(), tr); err != nil {
+	//todo почти везде, где в тестах дергается nd.state, есть data race
+
+	ndState := nd.state.Copy()
+	if err := applyTransaction(ndState, vd.NodeAddress(), tr); err != nil {
 		t.Errorf("apply transaction error: %v", err)
 	}
 
-	if v, _ := nd.state.Get("one"); v != 9 {
+	if v, _ := ndState.Get("one"); v != 9 {
 		t.Fatalf("wrong 'one' state: get=%v want=%v'", v, 9)
 	}
 
-	if v, _ := nd.state.Get("two"); v != 40 {
+	if v, _ := ndState.Get("two"); v != 40 {
 		t.Fatalf("wrong 'two' state: get=%v want=%v'", v, 40)
 	}
 
-	if v, _ := nd.state.Get(vd.NodeAddress()); v != 1 {
+	if v, _ := ndState.Get(vd.NodeAddress()); v != 1 {
 		t.Fatalf("wrong 'val' state: get=%v want=%v'", v, 1)
 	}
 }
@@ -160,6 +166,7 @@ func TestNode_VerifySameBlockFailure(t *testing.T) {
 	if err == nil {
 		t.Error("same block verified")
 	} else {
+		// todo лучше сравнить в ожидаемой ошибкой и ничего не выводить в случае успеха
 		t.Log(err)
 	}
 }
@@ -254,7 +261,7 @@ func TestNode_RevertBlock(t *testing.T) {
 	_ = nd.insertBlock(block)
 	insertedBlockHash := nd.lastBlockHash()
 
-	if reflect.DeepEqual(stateBefore, nd.state) {
+	if reflect.DeepEqual(stateBefore, nd.state.Copy()) {
 		t.Fatalf("state was not changed: check insert block function")
 	}
 
@@ -267,13 +274,13 @@ func TestNode_RevertBlock(t *testing.T) {
 	if insertedBlockHash == revertedBlockHash {
 		t.Fatalf("same hashes for inserted and reverted blocks")
 	}
-	if nd.lastBlockNum != 0 {
+	if nd.LastBlockNum() != 0 {
 		t.Fatalf("last block num was not changed")
 	}
-	if len(nd.blocks) != 1 {
-		t.Fatalf("block len not correct: get=%v, want=%v", len(nd.blocks), 1)
+	if nd.Blocks() != 1 {
+		t.Fatalf("block len not correct: get=%v, want=%v", nd.Blocks(), 1)
 	}
-	if !reflect.DeepEqual(nd.state, stateBefore) {
+	if !reflect.DeepEqual(nd.state.Copy(), stateBefore) {
 		t.Fatalf("block was not reverted: \n get state: %v, \n before state: %v", nd.state, stateBefore)
 	}
 }
@@ -354,13 +361,12 @@ func TestNode_SyncTwoNodes(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if len(nd2.blocks) != 2 {
+	// todo data race с записью `simple_chain/node/node.go:529 +0x4a8`
+	if nd2.Blocks() != 2 {
 		t.Fatalf("no blocks was synced")
 	}
 
-	if !reflect.DeepEqual(nd1.state, nd2.state) {
-		t.Fatalf("wrong synced state")
-	}
+	compareStates(t, nd1, nd2)
 }
 
 func TestNode_SyncTwoNodesWithDifferentTotalDifficulty(t *testing.T) {
@@ -401,9 +407,7 @@ func TestNode_SyncTwoNodesWithDifferentTotalDifficulty(t *testing.T) {
 	if !reflect.DeepEqual(nd1.blocks, nd2.blocks) {
 		t.Fatalf("nodes not synchronized")
 	}
-	if !reflect.DeepEqual(nd1.state, nd2.state) {
-		t.Fatalf("states are not equal")
-	}
+	compareStates(t, nd1, nd2)
 }
 
 func TestNode_SyncOneNodeOneValidator(t *testing.T) {
@@ -420,14 +424,18 @@ func TestNode_SyncOneNodeOneValidator(t *testing.T) {
 	_ = vd.stopValidating()
 	time.Sleep(time.Millisecond * 300)
 
-	if !reflect.DeepEqual(nd.state, vd.state) {
+	if !reflect.DeepEqual(nd.state.Copy(), vd.state.Copy()) {
 		t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-			log.Simplify(nd.NodeAddress()), log.Simplify(vd.NodeAddress()), nd.state, vd.state)
+			log.Simplify(nd.NodeAddress()), log.Simplify(vd.NodeAddress()), nd.state.Copy(), vd.state.Copy())
 	}
 }
 
 func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
 	peers, validators, _ := makeSomePeers(2, 1, uint64(100000))
+
+	fmt.Println("T0")
+	comparePeers(t, peers)
+	fmt.Println("T1")
 
 	// fully connected
 	for i := 0; i < len(peers); i++ {
@@ -438,9 +446,17 @@ func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
 		}
 	}
 
+	fmt.Println("T2")
+	comparePeers(t, peers)
+	fmt.Println("T3")
+
 	for _, val := range validators {
 		val.startValidating()
 	}
+
+	fmt.Println("T4")
+	comparePeers(t, peers)
+	fmt.Println("T5")
 
 	time.Sleep(time.Millisecond * 100)
 
@@ -448,16 +464,13 @@ func TestNode_SyncTwoNodesOneValidator(t *testing.T) {
 		_ = val.stopValidating()
 	}
 
-	time.Sleep(time.Millisecond * 300)
+	fmt.Println("T6")
+	comparePeers(t, peers)
+	fmt.Println("T7")
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Fatalf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-			}
-		}
-	}
+	time.Sleep(time.Millisecond * 1000)
+
+	comparePeers(t, peers)
 }
 
 func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
@@ -476,7 +489,7 @@ func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
 		val.startValidating()
 	}
 
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 1000)
 
 	for _, val := range validators {
 		_ = val.stopValidating()
@@ -484,17 +497,7 @@ func TestNode_SyncTwoNodesTwoValidators(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Logf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-				if len(peer1.blocks) != len(peer2.blocks) {
-					t.Fatalf("state and blocks len difference")
-				}
-			}
-		}
-	}
+	comparePeers(t, peers)
 }
 
 func TestNode_SyncFullyConnected(t *testing.T) {
@@ -521,17 +524,7 @@ func TestNode_SyncFullyConnected(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Logf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-				if len(peer1.blocks) != len(peer2.blocks) {
-					t.Fatalf("state and blocks len difference")
-				}
-			}
-		}
-	}
+	comparePeers(t, peers)
 }
 
 func TestNode_SyncLinear(t *testing.T) {
@@ -556,19 +549,8 @@ func TestNode_SyncLinear(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Logf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-				if len(peer1.blocks) != len(peer2.blocks) {
-					t.Fatalf("state and blocks len difference")
-				}
-			}
-		}
-	}
+	comparePeers(t, peers)
 }
-
 func TestNode_SyncRing(t *testing.T) {
 	peers, validators, _ := makeSomePeers(5, 3, uint64(100000))
 
@@ -595,17 +577,7 @@ func TestNode_SyncRing(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Logf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-				if len(peer1.blocks) != len(peer2.blocks) {
-					t.Fatalf("state and blocks len difference")
-				}
-			}
-		}
-	}
+	comparePeers(t, peers)
 }
 
 func TestNode_SyncStar(t *testing.T) {
@@ -633,17 +605,7 @@ func TestNode_SyncStar(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 
-	for i, peer1 := range peers {
-		for j, peer2 := range peers {
-			if i != j && !reflect.DeepEqual(peer1.state, peer2.state) {
-				t.Logf("%v and %v state difference: \n%v vs \n%v",
-					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peer1.state, peer2.state)
-				if len(peer1.blocks) != len(peer2.blocks) {
-					t.Fatalf("state and blocks len difference")
-				}
-			}
-		}
-	}
+	comparePeers(t, peers)
 }
 
 /* --- Utils -------------------------------------------------------------------------------------------------------- */
@@ -678,4 +640,46 @@ func makeSomePeers(nNodes uint64, nVals uint64, initBalance uint64) ([]*Node, []
 	}
 
 	return peers, vals, nodes
+}
+
+func comparePeers(t *testing.T, peers []*Node) {
+	t.Helper()
+
+	for i, peer1 := range peers {
+		for j, peer2 := range peers {
+			// todo мы не хотим сравнивать i с j, а потом еще раз j с i
+			if i >= j {
+				continue
+			}
+
+			peerState1 := peer1.state.Copy()
+			peerState2 := peer2.state.Copy()
+			peerBlocks1 := peer1.Blocks()
+			peerBlocks2 := peer2.Blocks()
+			if !reflect.DeepEqual(peerState1, peerState2) {
+				t.Logf("%v and %v state difference: \n%v vs \n%v",
+					log.Simplify(peer1.NodeAddress()), log.Simplify(peer2.NodeAddress()), peerState1, peerState2)
+				if peer1.Blocks() != peer2.Blocks() {
+					peersSrt := ""
+					for _, p := range peers {
+						peersSrt += fmt.Sprintf("peer %s, last block %d(%d)\n", p.address, p.LastBlockNum(), p.Blocks())
+					}
+
+					t.Fatalf("state and blocks len difference. Peers blocks: %d - %d\nPeers:\n%v", peerBlocks1, peerBlocks2, peersSrt)
+				}
+			}
+		}
+	}
+}
+
+func compareStates(t *testing.T, n1, n2 *Node) {
+	t.Helper()
+
+	st1 := n1.state.Copy()
+	st2 := n2.state.Copy()
+
+	if !reflect.DeepEqual(st1, st2) {
+		t.Fatalf("%v and %v state difference: \n%v vs \n%v",
+			log.Simplify(n1.NodeAddress()), log.Simplify(n2.NodeAddress()), n1.state, n2.state)
+	}
 }

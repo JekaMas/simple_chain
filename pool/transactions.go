@@ -1,9 +1,10 @@
 package pool
 
 import (
-	"simple_chain/msg"
 	"sync"
 	"time"
+
+	"../msg"
 )
 
 const (
@@ -16,7 +17,7 @@ type pooledTransaction struct {
 }
 
 type TransactionPool struct {
-	alloc       map[string]pooledTransaction //transaction hash - > transaction
+	alloc       map[string]pooledTransaction // transaction hash - > transaction
 	maxLifeTime int64
 	mx          sync.Mutex
 }

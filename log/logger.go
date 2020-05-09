@@ -2,8 +2,9 @@ package log
 
 import (
 	"fmt"
-	"simple_chain/msg"
 	"strings"
+
+	"../msg"
 )
 
 const (

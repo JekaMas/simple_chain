@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/gob"
-	"simple_chain/encode"
+
+	"../encode"
 )
 
 type Block struct {

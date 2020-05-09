@@ -18,17 +18,17 @@ func Bytes(v interface{}) ([]byte, error) {
 }
 
 func HashAlloc(alloc map[string]uint64) (string, error) {
-	//sort Alloc keys (lexicographical order)
+	// sort Alloc keys (lexicographical order)
 	keys := make([]string, 0, len(alloc))
 	for k := range alloc {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	//concat fund in the one big string
+	// concat fund in the one big string
 	concatStr := ""
 	for _, key := range keys {
 		concatStr += fmt.Sprintf("%v:%v,", key, alloc[key])
 	}
-	//return hash of the string
+	// return hash of the string
 	return Hash([]byte(concatStr)), nil
 }

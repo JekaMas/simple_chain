@@ -2,9 +2,9 @@ package storage
 
 import (
 	"fmt"
-	"sync"
 )
 
+// todo: зачем нам интерфейсы в каждом пакете на том же уровне, где и сам тип, реализующий интерфейс?
 type Storage interface {
 	Put(key string, data uint64) error
 	PutOrAdd(key string, data uint64) error
@@ -22,9 +22,6 @@ type Storage interface {
 
 	// Copy
 	Copy() Storage
-
-	// Concurrency
-	sync.Locker
 
 	// String
 	fmt.Stringer

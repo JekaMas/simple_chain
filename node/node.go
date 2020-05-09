@@ -8,12 +8,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"simple_chain/genesis"
-	"simple_chain/log"
-	"simple_chain/msg"
-	"simple_chain/storage"
 	"sync"
 	"time"
+
+	"../genesis"
+	"../log"
+	"../msg"
+	"../storage"
 )
 
 const (
@@ -36,16 +37,16 @@ type Node struct {
 	genesis      genesis.Genesis
 	lastBlockNum uint64
 
-	//chain
+	// chain
 	blocks []msg.Block
 	// blockPool pool.BlockPool
-	//peer address -> peer info
+	// peer address -> peer info
 	peers map[string]connectedPeer
-	//peer address -> fund
+	// peer address -> fund
 	state storage.Storage
 
 	mxPeers  *sync.Mutex
-	mxBlocks *sync.Mutex
+	mxBlocks *sync.RWMutex
 	logger   log.Logger
 }
 
@@ -75,8 +76,8 @@ func NewNodeWithKey(genesis genesis.Genesis, key ed25519.PrivateKey) (*Node, err
 		peers:        make(map[string]connectedPeer, 0),
 		state:        state,
 
-		mxBlocks: &(sync.Mutex{}),
-		mxPeers:  &(sync.Mutex{}),
+		mxBlocks: new(sync.RWMutex),
+		mxPeers:  new(sync.Mutex),
 		logger:   log.New(log.Chain),
 	}, nil
 }
@@ -164,11 +165,24 @@ func (c *Node) AddTransaction(tr msg.Transaction) error {
 	return nil
 }
 
-func (c *Node) getBlockByNumber(ID uint64) msg.Block {
-	return c.blocks[ID]
+func (c *Node) GetBlockByNumber(ID uint64) (msg.Block, error) {
+	c.mxBlocks.RLock()
+	defer c.mxBlocks.RUnlock()
+
+	return c.getBlockByNumber(ID)
+}
+
+func (c *Node) getBlockByNumber(ID uint64) (msg.Block, error) {
+	if ID >= uint64(len(c.blocks)) {
+		return msg.Block{}, errors.New("block isn't in the chain")
+	}
+	return c.blocks[ID], nil
 }
 
 func (c *Node) getBlockByHash(hash string) (msg.Block, error) {
+	c.mxBlocks.RLock()
+	defer c.mxBlocks.RUnlock()
+
 	for _, block := range c.blocks {
 		blockHash, err := block.Hash()
 		if err != nil {
@@ -184,7 +198,7 @@ func (c *Node) getBlockByHash(hash string) (msg.Block, error) {
 func (c *Node) NodeInfo() msg.NodeInfoResp {
 	return msg.NodeInfoResp{
 		NodeName:        c.address,
-		BlockNum:        c.lastBlockNum,
+		BlockNum:        c.LastBlockNum(),
 		TotalDifficulty: c.totalDifficulty(),
 	}
 }
@@ -203,6 +217,7 @@ func (c *Node) SignTransaction(transaction msg.Transaction) (msg.Transaction, er
 	return transaction, nil
 }
 
+// todo: context как правило идет первым параметром
 func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 	m := msg.Message{
 		From: c.NodeAddress(),
@@ -213,17 +228,17 @@ func (c *Node) SendTo(cp connectedPeer, ctx context.Context, data interface{}) {
 
 func (c *Node) SendMessageTo(cp connectedPeer, ctx context.Context, msg msg.Message) {
 	cp.Out <- msg
-	//select {
-	//case :
-	//case <-ctx.Done():
-	//case <-time.After(MessageSendTimeout):
-	//}
+	// select {
+	// case :
+	// case <-ctx.Done():
+	// case <-time.After(MessageSendTimeout):
+	// }
 }
 
 /* --- Processes ---------------------------------------------------------------------------------------------------- */
 
 func (c *Node) peerLoop(ctx context.Context, peer connectedPeer) {
-	//handshake
+	// handshake
 	c.SendTo(peer, ctx, c.NodeInfo())
 
 	for {
@@ -309,9 +324,7 @@ func (c *Node) processBlockMessage(ctx context.Context, peer connectedPeer, bloc
 }
 
 func (c *Node) processBlock(block msg.Block) error {
-	c.mxBlocks.Lock()
-	defer c.mxBlocks.Unlock()
-
+	//todo слишком общий мьютекс, причем в verifyBlock Node.blocks не используется вовсе
 	if err := c.verifyBlock(block); err != nil {
 		return fmt.Errorf("can't process block: %v", err)
 	}
@@ -356,12 +369,19 @@ func (c *Node) processBlocksRequest(ctx context.Context, peer connectedPeer, req
 			return nil
 		}
 
-		for id := fromBlock.BlockNum + 1; id <= c.lastBlockNum; id++ {
+		for id := fromBlock.BlockNum + 1; id <= c.LastBlockNum(); id++ {
+
+			b, err := c.GetBlockByNumber(id)
+			if err != nil {
+				// todo handle an error
+				fmt.Println("!!!!!!!!!!!!!!!!!!!!!!1")
+				continue
+			}
 			c.logger.Infof("%v send block [%v] to %v",
-				log.Simplify(c.address), log.Simplify(c.blocks[id].BlockHash), log.Simplify(peer.Address))
+				log.Simplify(c.address), log.Simplify(b.BlockHash), log.Simplify(peer.Address))
 
 			c.SendTo(peer, ctx, msg.BlockMessage{
-				Block:           c.getBlockByNumber(id),
+				Block:           b,
 				TotalDifficulty: c.totalDifficulty(),
 			})
 		}
@@ -407,17 +427,24 @@ type Block struct {
 	Timestamp     int64 ???
 }
 */
+
+// todo: очень длинный и сложный метод
 func (c *Node) verifyBlock(block msg.Block) error {
 	// check block num
 	if block.BlockNum < 0 {
 		return errors.New("incorrect block num")
 	}
-	if block.BlockNum <= c.lastBlockNum {
-		return fmt.Errorf("already has block [%v <= %v]", block.BlockNum, c.lastBlockNum)
+	lastBlockNum := c.LastBlockNum()
+	if block.BlockNum <= lastBlockNum {
+		return fmt.Errorf("already has block [%v <= %v]", block.BlockNum, lastBlockNum)
 	}
 
 	// check parent hash
-	prevBlockHash := c.getBlockByNumber(block.BlockNum - 1).BlockHash
+	parent, err := c.GetBlockByNumber(block.BlockNum - 1)
+	if err != nil {
+		return err
+	}
+	prevBlockHash := parent.BlockHash
 	if prevBlockHash != block.PrevBlockHash {
 		return errors.New("parent hash is incorrect")
 	}
@@ -502,9 +529,6 @@ func verifyTransaction(state storage.Storage, tr msg.Transaction) error {
 
 func (c *Node) insertBlock(b msg.Block) error {
 	// and changes node state
-	c.state.Lock()
-	defer c.state.Unlock()
-
 	validatorAddr, err := PubKeyToAddress(b.PubKey)
 	if err != nil {
 		return err
@@ -525,11 +549,30 @@ func (c *Node) insertBlock(b msg.Block) error {
 		return err
 	}
 
+	c.mxBlocks.Lock()
+	defer c.mxBlocks.Unlock()
 	c.blocks = append(c.blocks, b)
 	c.lastBlockNum += 1
 
 	c.logger.Chain(c.NodeAddress(), c.blocks)
+
 	return nil
+}
+
+func (c *Node) Blocks() int {
+	c.mxBlocks.RLock()
+	defer c.mxBlocks.RUnlock()
+	return c.blocksN()
+}
+
+func (c *Node) blocksN() int {
+	return len(c.blocks)
+}
+
+func (c *Node) LastBlockNum() uint64 {
+	c.mxBlocks.RLock()
+	defer c.mxBlocks.RUnlock()
+	return c.lastBlockNum
 }
 
 func (c *Node) IsTransactionSuccess(tr msg.Transaction) bool {
@@ -545,7 +588,7 @@ func (c *Node) IsTransactionSuccess(tr msg.Transaction) bool {
 				continue
 			}
 			if hash == blockTrHash {
-				return c.lastBlockNum-block.BlockNum >= TransactionSuccessBlocksDelta
+				return c.LastBlockNum()-block.BlockNum >= TransactionSuccessBlocksDelta
 			}
 		}
 	}
@@ -554,7 +597,7 @@ func (c *Node) IsTransactionSuccess(tr msg.Transaction) bool {
 }
 
 func (c *Node) totalDifficulty() uint64 {
-	return uint64(len(c.blocks))
+	return uint64(c.Blocks())
 }
 
 func (c *Node) lastBlockHash() string {
@@ -568,15 +611,18 @@ func (c *Node) lastBlockHash() string {
 func (c *Node) revertLastBlock() error {
 	c.mxBlocks.Lock()
 	defer c.mxBlocks.Unlock()
+	n := c.blocksN()
 
-	if len(c.blocks) == 0 {
+	if n == 0 {
 		return errors.New("nothing to revert")
 	}
-	if len(c.blocks) == 1 {
+	if n == 1 {
 		return errors.New("genesis reverting")
 	}
 
+	// todo нам точно надо блокировать мьютекс блоков, при вызове метода state?
 	c.state.RevertBlock()
+
 	c.blocks = c.blocks[:len(c.blocks)-1]
 	c.lastBlockNum--
 
@@ -590,6 +636,8 @@ func (c *Node) hasBlock(m msg.Block) bool {
 		return false
 	}
 
+	c.mxBlocks.RLock()
+	defer c.mxBlocks.RUnlock()
 	for _, block := range c.blocks {
 		blockHash, err := block.Hash()
 		if err != nil {

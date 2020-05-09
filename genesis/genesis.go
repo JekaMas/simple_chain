@@ -1,11 +1,12 @@
 package genesis
 
 import (
-	"simple_chain/encode"
-	"simple_chain/msg"
 	"sort"
 	"strings"
 	"time"
+
+	"../encode"
+	"../msg"
 )
 
 var (

@@ -5,12 +5,13 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
-	"simple_chain/genesis"
-	"simple_chain/log"
-	"simple_chain/msg"
-	"simple_chain/pool"
-	"simple_chain/storage"
 	"time"
+
+	"../genesis"
+	"../log"
+	"../msg"
+	"../pool"
+	"../storage"
 )
 
 const (
@@ -78,8 +79,11 @@ func (c *Validator) startValidating() {
 	go func() {
 		for {
 			// validate new block
+
+			fmt.Println("mine", c.address, c.LastBlockNum()+1)
 			block, err := c.newBlock()
 			if err != nil {
+				fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
 				c.logger.Errorf("error generating block: %v", err)
 				// stop validating
 				return
@@ -90,6 +94,7 @@ func (c *Validator) startValidating() {
 			select {
 			case <-ctx.Done():
 				// return transactions
+				fmt.Println("!!!!TXS")
 				if len(block.Transactions) > 1 {
 					for _, tr := range block.Transactions[1:] {
 						err := c.AddTransaction(tr)
@@ -129,13 +134,23 @@ func (c *Validator) newBlock() (msg.Block, error) {
 	if err != nil {
 		return msg.Block{}, fmt.Errorf("can't varify transactions: %v", err)
 	}
+
 	// add reward transaction
 	txs = append([]msg.Transaction{c.coinbaseTransaction()}, txs...)
 
-	prevBlockHash := c.getBlockByNumber(c.lastBlockNum).BlockHash
+	c.mxBlocks.Lock()
+	prevBlockNum := c.lastBlockNum
+	prevBlock, err := c.getBlockByNumber(prevBlockNum)
+	if err != nil {
+		c.mxBlocks.Unlock()
+		return msg.Block{}, err
+	}
+	c.mxBlocks.Unlock()
+
+	prevBlockHash := prevBlock.BlockHash
 
 	block := msg.Block{
-		BlockNum:      c.lastBlockNum + 1,
+		BlockNum:      prevBlockNum + 1,
 		Nonce:         0,
 		Timestamp:     time.Now().UnixNano(),
 		Transactions:  txs,
